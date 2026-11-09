@@ -804,6 +804,7 @@ function renderApp() {
         <div><p class="hello">Chào buổi ${partOfDay()}, <b>${esc(name)}</b></p><p class="sub-hello">${WD[t.getDay()]}, ${dm(t)}/${t.getFullYear()}${S.demo ? ' · đang xem dữ liệu mẫu' : ''}</p></div>
         <div class="top-actions">
           <button class="round" data-act="go" data-t="budgets" aria-label="Nhắc nhở hạn mức">${li('bell', { size: 24, target: 'button', secondary: alerts ? '#ff8b7b' : '#36d6c4' })}${alerts ? `<span class="badge">${alerts}</span>` : ''}</button>
+          ${isStandalone() ? '' : `<button class="round install-btn" data-act="install" aria-label="Cài ứng dụng" title="Cài ứng dụng">${li('plus', { size: 22, target: 'button', secondary: '#63e4a4' })}</button>`}
           <button class="round" data-act="lock" aria-label="${S.demo ? 'Thoát xem thử' : 'Đăng xuất'}" title="${S.demo ? 'Thoát xem thử' : 'Đăng xuất'}">${li('exit', { size: 24, target: 'button' })}</button>
           <button class="avatar shine" data-act="profile" aria-label="Hồ sơ: đổi tên, ảnh đại diện" title="Hồ sơ">${avatarInner(S.profile, name)}</button>
         </div>
@@ -941,6 +942,33 @@ function syncWelcome(name) {
   if (host.dataset.sig !== nw.textContent || !!cur.querySelector('img') !== !!nw.querySelector('img')) { cur.innerHTML = nw.innerHTML; host.dataset.sig = nw.textContent; }
 }
 
+// ---------- cài thành ứng dụng ----------
+let installEvt = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+async function doInstall() {
+  if (installEvt) {
+    installEvt.prompt();
+    const r = await installEvt.userChoice.catch(() => null);
+    installEvt = null;
+    if (r && r.outcome === 'accepted') return;
+  }
+  S.panel = 'install'; S.panelErr = ''; S.panelMsg = ''; S.nav = 'security'; render();
+  const el = $('#security'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+function installGuide() {
+  const ios = isIOS(), android = /android/i.test(navigator.userAgent);
+  const steps = ios
+    ? ['Mở trang này bằng <b>Safari</b> (không mở trong Zalo hay Facebook).', 'Bấm nút <b>Chia sẻ</b> (ô vuông có mũi tên lên) ở thanh dưới.', 'Kéo xuống, chọn <b>Thêm vào MH chính</b>, rồi bấm <b>Thêm</b>.', 'Mở ứng dụng bằng biểu tượng <b>Ghi chú</b> trên màn hình chính.']
+    : android
+      ? ['Mở trang này bằng <b>Chrome</b>.', 'Bấm nút <b>⋮</b> ở góc trên bên phải.', 'Chọn <b>Cài đặt ứng dụng</b> (hoặc <b>Thêm vào màn hình chính</b>), rồi bấm <b>Cài đặt</b>.', 'Mở ứng dụng bằng biểu tượng <b>Ghi chú</b>.']
+      : ['Mở trang này bằng <b>Chrome</b> hoặc <b>Edge</b>.', 'Bấm biểu tượng <b>Cài đặt</b> (màn hình có mũi tên) ở cuối thanh địa chỉ, hoặc menu <b>⋮ → Ứng dụng → Cài đặt trang này làm ứng dụng</b>.', 'Bấm <b>Cài đặt</b>. Ứng dụng có biểu tượng riêng trên Desktop và menu Start.'];
+  return `<p class="pct" style="text-align:left">Cài xong, sổ mở thành ứng dụng riêng có biểu tượng <b>Ghi chú</b>, không có thanh địa chỉ, dùng được cả khi mất mạng. Dữ liệu vẫn được mã hóa như cũ.</p>
+    <ol class="steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>
+    ${installEvt ? '<button class="btn primary" data-act="install">Cài ngay</button>' : ''}
+    <div class="actions"><button class="btn ghost" data-act="panel" data-p="">Đóng</button></div>`;
+}
+
 // ---------- quản lý danh mục ----------
 function catsCard() {
   if (S.cpanel) return `<section class="card" id="cats"><div class="card-head"><h3>${S.cpanel.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3></div>${catForm()}</section>`;
@@ -1035,6 +1063,7 @@ function securityCard() {
     <div class="actions"><button class="btn ghost" data-act="panel" data-p="">Hủy</button><label class="btn primary" for="importFile">Chọn file sao lưu</label></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>`;
   else if (S.panel === 'profile') body = profilePanel();
+  else if (S.panel === 'install') body = installGuide();
   else if (S.panel === 'sync') body = `
     <p class="pct" style="text-align:left">Đồng bộ lưu bản <b>đã mã hóa</b> của sổ vào kho riêng tư <b>${SYNC_REPO}</b> trên GitHub của bạn. Máy khác có mã này cộng với tên đăng nhập và mật khẩu mới mở được sổ.</p>
     <form id="syncForm" class="stack" novalidate>
@@ -1071,6 +1100,7 @@ function securityCard() {
         : `<button class="btn primary" data-act="panel" data-p="sync">${li('cloud', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Bật đồng bộ</button>`}</div>
     </div>
     <div class="grid2">
+      ${isStandalone() ? '' : '<button class="btn ghost" data-act="install">Cài ứng dụng vào máy</button>'}
       <button class="btn ghost" data-act="profile">Đổi tên, ảnh đại diện</button>
       <button class="btn ghost" data-act="backup">Sao lưu ra file ngay</button>
       <button class="btn ghost" data-act="snaps">Bản tự lưu (${SNAP_KEEP} ngày)</button>
@@ -1171,6 +1201,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'forgot') { S.gate = 'forgot'; S.gateErr = ''; render(); }
   else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
   else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
+  else if (act === 'install') { await doInstall(); }
   else if (act === 'gsync') { S.gate = 'gsync'; S.gateErr = ''; render(); }
   else if (act === 'gback') { S.gate = vault ? 'unlock' : 'setup'; S.gateErr = ''; render(); }
   else if (act === 'syncnow') { try { await syncNow(); S.panelMsg = 'Đã đồng bộ xong.'; } catch (e) { S.panelErr = e.message; } render(); }
@@ -1393,5 +1424,8 @@ document.addEventListener('change', async (ev) => {
 });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// Cài như ứng dụng: Chrome/Edge/Android cho bật hộp cài đặt; iPhone dùng "Thêm vào MH chính"
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+addEventListener('appinstalled', () => { installEvt = null; S.panelMsg = 'Đã cài ứng dụng. Từ giờ mở bằng biểu tượng "Ghi chú" trên máy.'; if (S.panel === 'install') S.panel = ''; render(); });
 boot();
 })();
