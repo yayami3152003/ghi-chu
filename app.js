@@ -958,13 +958,15 @@ async function doInstall() {
 }
 // Khung tự hỏi "Cài ứng dụng về máy?" khi mở trang (chưa cài, và chưa bấm "Để sau" trong 3 ngày)
 const SHARE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+let iaStep = 'ask';
 function installAskHTML() {
   const ios = isIOS(), android = /android/i.test(navigator.userAgent);
-  let body, btns;
-  if (installEvt) {
-    body = '<p>Có biểu tượng riêng trên màn hình chính, mở nhanh như ứng dụng, dùng được cả khi mất mạng.</p>';
-    btns = '<button class="btn ghost" data-act="iask-later">Để sau</button><button class="btn primary" data-act="iask-yes">Cài ngay</button>';
+  let body, btns, title = 'Bạn có muốn cài ứng dụng này về máy không?';
+  if (iaStep === 'ask') {
+    body = '<p>Ứng dụng có biểu tượng riêng trên màn hình chính, mở nhanh, dùng được cả khi mất mạng.</p>';
+    btns = '<button class="btn ghost" data-act="iask-no">Không</button><button class="btn primary" data-act="iask-yes">Có</button>';
   } else {
+    title = 'Còn một bước nữa';
     const steps = ios
       ? [`Bấm nút <b>Chia sẻ</b> ${SHARE_SVG} ở thanh dưới của Safari.`, 'Kéo xuống, chọn <b>Thêm vào MH chính</b>.', 'Bấm <b>Thêm</b> ở góc trên bên phải.']
       : android
@@ -973,12 +975,12 @@ function installAskHTML() {
     body = `<p>Làm theo ${steps.length} bước để có biểu tượng <b>Ghi chú</b> trên màn hình chính:</p><ol class="steps" style="text-align:left;align-self:stretch">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>`
       + (ios && !/safari/i.test(navigator.userAgent.replace(/crios|fxios|edgios/i, '')) ? '<p class="w-warn">Hãy mở trang này bằng Safari mới cài được.</p>' : '')
       + (/zalo|fban|fbav|instagram/i.test(navigator.userAgent) ? '<p class="w-warn">Bạn đang mở trong ứng dụng khác. Hãy mở bằng Safari hoặc Chrome.</p>' : '');
-    btns = '<button class="btn ghost" data-act="iask-later">Để sau</button><button class="btn primary" data-act="iask-ok">Đã hiểu</button>';
+    btns = '<button class="btn primary" data-act="iask-ok">Đã hiểu</button>';
   }
   return `<div class="welcome-scrim install-ask"><div class="welcome" role="dialog" aria-modal="true" aria-labelledby="iaTitle">
     <span class="sheen" aria-hidden="true"></span>
     <img class="app-ico" src="icon-192.png" alt="" width="84" height="84">
-    <h2 id="iaTitle">Cài ứng dụng Ghi chú về máy?</h2>
+    <h2 id="iaTitle">${title}</h2>
     ${body}
     <div class="actions" style="width:100%">${btns}</div>
   </div></div>`;
@@ -988,10 +990,11 @@ function installAskShow(force) {
   if (!host || isStandalone()) { if (host) host.innerHTML = ''; return; }
   let until = 0; try { until = Number(localStorage.getItem('gc.installLater')) || 0; } catch {}
   if (!force && Date.now() < until) return;
+  if (!host.firstChild) iaStep = 'ask';
   host.innerHTML = installAskHTML();
 }
 function installAskClose(later) {
-  if (later) { try { localStorage.setItem('gc.installLater', String(Date.now() + 3 * 864e5)); } catch {} }
+  if (later) { try { localStorage.setItem('gc.installLater', String(Date.now() + 7 * 864e5)); } catch {} }
   const host = $('#installHost'); if (host) host.innerHTML = '';
 }
 function installGuide() {
@@ -1240,8 +1243,17 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
   else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
   else if (act === 'install') { if (S.gate === 'app') await doInstall(); else installAskShow(true); }
-  else if (act === 'iask-yes') { const ev2 = installEvt; installAskClose(false); if (ev2) { ev2.prompt(); await ev2.userChoice.catch(() => null); installEvt = null; } }
-  else if (act === 'iask-later') installAskClose(true);
+  else if (act === 'iask-yes') {
+    // Chrome/Edge/Android: bật hộp cài đặt của hệ thống. Chờ tối đa 2 giây nếu trình duyệt chưa sẵn sàng.
+    for (let i = 0; i < 8 && !installEvt && !isIOS(); i++) await sleep(250);
+    const ev2 = installEvt;
+    if (ev2) {
+      installAskClose(false); ev2.prompt();
+      const r = await ev2.userChoice.catch(() => null); installEvt = null;
+      if (r && r.outcome === 'accepted') showToast('Đang cài ứng dụng Ghi chú về máy…', 'ok');
+    } else { iaStep = 'steps'; installAskShow(true); }
+  }
+  else if (act === 'iask-no') installAskClose(true);
   else if (act === 'iask-ok') installAskClose(true);
   else if (act === 'gsync') { S.gate = 'gsync'; S.gateErr = ''; render(); }
   else if (act === 'gback') { S.gate = vault ? 'unlock' : 'setup'; S.gateErr = ''; render(); }
