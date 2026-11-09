@@ -594,7 +594,7 @@ const app = $('#app');
 function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } }
 
 function gateShell(inner) {
-  app.innerHTML = `<div class="gate"><div class="gate-card"><div class="logo">${li('coins', { size: 34, trigger: 'loop', delay: 2500, primary: '#04201d', secondary: '#04201d' })}</div>${inner}</div></div>`;
+  app.innerHTML = `<div class="gate"><div class="gate-card"><div class="logo">${li('coins', { size: 34, trigger: 'loop', delay: 2500, primary: '#04201d', secondary: '#04201d' })}</div>${inner}${isStandalone() ? '' : '<button class="link" data-act="install">Cài ứng dụng Ghi chú vào máy</button>'}</div></div>`;
 }
 function renderGate() {
   const g = S.gate;
@@ -956,6 +956,44 @@ async function doInstall() {
   S.panel = 'install'; S.panelErr = ''; S.panelMsg = ''; S.nav = 'security'; render();
   const el = $('#security'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
+// Khung tự hỏi "Cài ứng dụng về máy?" khi mở trang (chưa cài, và chưa bấm "Để sau" trong 3 ngày)
+const SHARE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+function installAskHTML() {
+  const ios = isIOS(), android = /android/i.test(navigator.userAgent);
+  let body, btns;
+  if (installEvt) {
+    body = '<p>Có biểu tượng riêng trên màn hình chính, mở nhanh như ứng dụng, dùng được cả khi mất mạng.</p>';
+    btns = '<button class="btn ghost" data-act="iask-later">Để sau</button><button class="btn primary" data-act="iask-yes">Cài ngay</button>';
+  } else {
+    const steps = ios
+      ? [`Bấm nút <b>Chia sẻ</b> ${SHARE_SVG} ở thanh dưới của Safari.`, 'Kéo xuống, chọn <b>Thêm vào MH chính</b>.', 'Bấm <b>Thêm</b> ở góc trên bên phải.']
+      : android
+        ? ['Bấm nút <b>⋮</b> ở góc trên bên phải Chrome.', 'Chọn <b>Cài đặt ứng dụng</b> hoặc <b>Thêm vào màn hình chính</b>.', 'Bấm <b>Cài đặt</b>.']
+        : ['Bấm biểu tượng <b>Cài đặt</b> ở cuối thanh địa chỉ của Chrome hoặc Edge.', 'Bấm <b>Cài đặt</b>.'];
+    body = `<p>Làm theo ${steps.length} bước để có biểu tượng <b>Ghi chú</b> trên màn hình chính:</p><ol class="steps" style="text-align:left;align-self:stretch">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>`
+      + (ios && !/safari/i.test(navigator.userAgent.replace(/crios|fxios|edgios/i, '')) ? '<p class="w-warn">Hãy mở trang này bằng Safari mới cài được.</p>' : '')
+      + (/zalo|fban|fbav|instagram/i.test(navigator.userAgent) ? '<p class="w-warn">Bạn đang mở trong ứng dụng khác. Hãy mở bằng Safari hoặc Chrome.</p>' : '');
+    btns = '<button class="btn ghost" data-act="iask-later">Để sau</button><button class="btn primary" data-act="iask-ok">Đã hiểu</button>';
+  }
+  return `<div class="welcome-scrim install-ask"><div class="welcome" role="dialog" aria-modal="true" aria-labelledby="iaTitle">
+    <span class="sheen" aria-hidden="true"></span>
+    <img class="app-ico" src="icon-192.png" alt="" width="84" height="84">
+    <h2 id="iaTitle">Cài ứng dụng Ghi chú về máy?</h2>
+    ${body}
+    <div class="actions" style="width:100%">${btns}</div>
+  </div></div>`;
+}
+function installAskShow(force) {
+  const host = $('#installHost');
+  if (!host || isStandalone()) { if (host) host.innerHTML = ''; return; }
+  let until = 0; try { until = Number(localStorage.getItem('gc.installLater')) || 0; } catch {}
+  if (!force && Date.now() < until) return;
+  host.innerHTML = installAskHTML();
+}
+function installAskClose(later) {
+  if (later) { try { localStorage.setItem('gc.installLater', String(Date.now() + 3 * 864e5)); } catch {} }
+  const host = $('#installHost'); if (host) host.innerHTML = '';
+}
 function installGuide() {
   const ios = isIOS(), android = /android/i.test(navigator.userAgent);
   const steps = ios
@@ -1201,7 +1239,10 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'forgot') { S.gate = 'forgot'; S.gateErr = ''; render(); }
   else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
   else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
-  else if (act === 'install') { await doInstall(); }
+  else if (act === 'install') { if (S.gate === 'app') await doInstall(); else installAskShow(true); }
+  else if (act === 'iask-yes') { const ev2 = installEvt; installAskClose(false); if (ev2) { ev2.prompt(); await ev2.userChoice.catch(() => null); installEvt = null; } }
+  else if (act === 'iask-later') installAskClose(true);
+  else if (act === 'iask-ok') installAskClose(true);
   else if (act === 'gsync') { S.gate = 'gsync'; S.gateErr = ''; render(); }
   else if (act === 'gback') { S.gate = vault ? 'unlock' : 'setup'; S.gateErr = ''; render(); }
   else if (act === 'syncnow') { try { await syncNow(); S.panelMsg = 'Đã đồng bộ xong.'; } catch (e) { S.panelErr = e.message; } render(); }
@@ -1425,7 +1466,9 @@ document.addEventListener('change', async (ev) => {
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 // Cài như ứng dụng: Chrome/Edge/Android cho bật hộp cài đặt; iPhone dùng "Thêm vào MH chính"
-addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if ($('#installHost .install-ask')) installAskShow(true); });
+// Chỉ tự hỏi trên điện thoại / máy tính bảng, sau khi trang mở được 1,5 giây
+if (matchMedia('(pointer: coarse)').matches || /android|iphone|ipad|ipod/i.test(navigator.userAgent)) setTimeout(() => installAskShow(false), 1500);
 addEventListener('appinstalled', () => { installEvt = null; S.panelMsg = 'Đã cài ứng dụng. Từ giờ mở bằng biểu tượng "Ghi chú" trên máy.'; if (S.panel === 'install') S.panel = ''; render(); });
 boot();
 })();

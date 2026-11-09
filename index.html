@@ -319,6 +319,8 @@ button.avatar{border:0;padding:0;cursor:pointer}
 .pair-box.show .pair-cover{display:none}
 
 /* cài ứng dụng */
+.install-ask{z-index:60}
+.app-ico{width:84px;height:84px;border-radius:22px;box-shadow:0 0 0 3px rgba(255,255,255,.14),0 14px 34px rgba(34,169,194,.45);position:relative;z-index:1}
 .install-btn{box-shadow:inset 0 0 0 1px rgba(99,228,164,.45)}
 .steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:14px;color:var(--ink)}
 .steps li::marker{color:var(--accent);font-weight:700}
@@ -365,6 +367,7 @@ button.avatar{border:0;padding:0;cursor:pointer}
 </form>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <div id="welcomeHost"></div>
+<div id="installHost"></div>
 
 <script src="vendor/qrcode.js"></script>
 <script src="app.js"></script>
