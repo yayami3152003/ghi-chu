@@ -318,6 +318,32 @@ button.avatar{border:0;padding:0;cursor:pointer}
 .pair-cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(8,17,19,.55);color:var(--ink);font-weight:700;font-size:14px}
 .pair-box.show .pair-cover{display:none}
 
+/* sổ nợ */
+.debt-sum{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.debt-sum button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:16px;background:var(--glass);border:1.5px solid var(--glass-line);text-align:left;min-width:0}
+.debt-sum button span{font-size:12.5px;color:var(--muted);font-weight:600}
+.debt-sum button b{font-family:var(--display);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.debt-sum button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.debt-row{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:center;text-align:left;width:100%;padding:10px;border-radius:18px;background:var(--glass);border:1px solid var(--glass-line)}
+.debt-row:hover{background:var(--glass-2);border-color:var(--glass-hi)}
+.debt-row .track i{background:var(--accent)}
+.debt-row.lv-over{border-color:rgba(255,139,123,.55)} .debt-row.lv-over .bg-note{color:var(--out);font-weight:700}
+.debt-row.lv-warn{border-color:rgba(242,196,107,.45)} .debt-row.lv-warn .bg-note{color:var(--warn);font-weight:600}
+.debt-row.is-done{opacity:.6}
+.who-ava{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;text-transform:uppercase}
+.who-ava.cho{background:var(--in-soft);color:var(--in);box-shadow:inset 0 0 0 1px rgba(99,228,164,.4)}
+.who-ava.no{background:var(--out-soft);color:var(--out);box-shadow:inset 0 0 0 1px rgba(255,139,123,.4)}
+.pay-box{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:var(--glass);border:1px solid var(--glass-line)}
+.pay-row{display:grid;grid-template-columns:1fr auto 32px;gap:8px;align-items:center;font-size:13.5px;color:var(--muted)}
+.pay-row b{color:var(--in);font-variant-numeric:tabular-nums}
+.pay-row .icon-btn{width:30px;height:30px;font-size:18px;color:var(--muted)}
+.pay-add{display:grid;grid-template-columns:1fr 140px auto;gap:8px}
+.pay-add input{padding:10px 12px;border-radius:12px;border:1px solid var(--glass-line);background:rgba(255,255,255,.05);color:var(--ink);font-size:14.5px;min-width:0;width:100%}
+.pay-add .btn{flex:none;padding:10px 12px;font-size:13.5px}
+@media (max-width:520px){.pay-add{grid-template-columns:1fr 1fr}.pay-add .btn{grid-column:1 / -1}}
+
+@media (max-width:760px){.rail-nav button[data-t="security"]{display:none}.rail-nav button{padding:6px 4px}}
+
 /* cài ứng dụng */
 .install-ask{z-index:60}
 .app-ico{width:84px;height:84px;border-radius:22px;box-shadow:0 0 0 3px rgba(255,255,255,.14),0 14px 34px rgba(34,169,194,.45);position:relative;z-index:1}

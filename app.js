@@ -19,7 +19,7 @@ const LI_KEY = {
   giaitri: 'zsyzaums', caulong: 'wmqqbxlm', hoctap: 'lufygyut', giadinh: 'xvmmqwjv', khac: 'lzsupfwm',
   luong: 'ylscktzo', thuong: 'mchvarrg', banhang: 'uepnupwh', dautu: 'fcwmlcjj', duoccho: 'ewmfucya', khacthu: 'kkdnopsh',
   home: 'pgirtdfe', piggy: 'opqmrqco', chart: 'fcwmlcjj', book: 'zbtbhzsg', wrench: 'fvkvwmsp', plus: 'ueoydrft',
-  exit: 'txuhvtae', bell: 'ypbuyaqd', eye: 'knitbwfa', warning: 'pilfbsjh', coins: 'kkdnopsh', calendar: 'laobovmg', cloud: 'evearxpv', check: 'pxixoqxa',
+  exit: 'txuhvtae', bell: 'ypbuyaqd', eye: 'knitbwfa', debt: 'xvmmqwjv', warning: 'pilfbsjh', coins: 'kkdnopsh', calendar: 'laobovmg', cloud: 'evearxpv', check: 'pxixoqxa',
 };
 const CAT_HEX = {
   an: '#f4a259', dilai: '#62b6f0', muasam: '#e987b8', hoadon: '#e8c65a', nha: '#a699f5', suckhoe: '#f47c6c', giaitri: '#4fd6d0',
@@ -171,7 +171,7 @@ const S = {
   view: 'week', anchor: today(), bk: 'chi',
 };
 try { const v = localStorage.getItem('stc.view'); if (['day', 'week', 'month'].includes(v)) S.view = v; } catch {}
-let db = null, vaultRef = null, txCol = null, bgCol = null, cfgCol = null, vault = null, unsub = null, unsubBg = null, unsubCfg = null, loadTimer = null;
+let db = null, vaultRef = null, txCol = null, bgCol = null, cfgCol = null, debtCol = null, vault = null, unsub = null, unsubBg = null, unsubCfg = null, unsubDebt = null, loadTimer = null;
 
 // ---------- lưu ngay trong máy (localStorage), không gửi đi đâu ----------
 const PFX = 'gc1:';
@@ -409,6 +409,7 @@ async function boot() {
   txCol = vaultRef.collection('tx');
   bgCol = vaultRef.collection('bg');
   cfgCol = vaultRef.collection('cfg');
+  debtCol = vaultRef.collection('debt');
   // Mở từ mã QR "Kết nối máy khác": lưu mã đồng bộ rồi xóa nó khỏi thanh địa chỉ
   if (location.hash.startsWith('#ket-noi=')) {
     const tok = decodeURIComponent(location.hash.slice(9));
@@ -481,7 +482,7 @@ async function changePin(newPin) {
   vault = { ...vault, ...upd };
 }
 function enterApp(key, raw) {
-  S.gateNote = ''; S.bpanel = null; S.bErr = ''; S.profile = {}; S.cpanel = null; applyCats(null); S.welcome = true;
+  S.gateNote = ''; S.bpanel = null; S.bErr = ''; S.dpanel = null; S.dErr = ''; S.profile = {}; S.cpanel = null; applyCats(null); S.welcome = true;
   S.key = key; S.raw = raw || null; S.demo = false; S.panel = ''; S.shownCode = ''; S.tx = new Map(); S.loading = true; S.stale = false; S.loadErr = '';
   S.gate = 'app';
   const gen = ++S.gen;
@@ -538,6 +539,20 @@ function enterApp(key, raw) {
       if (gen === S.gen) render();
     });
   });
+  // Sổ nợ (mã hóa từng khoản)
+  S.debts = new Map();
+  let dchain = Promise.resolve();
+  unsubDebt = debtCol.onSnapshot((snap) => {
+    const changes = snap.docChanges();
+    dchain = dchain.then(async () => {
+      for (const ch of changes) {
+        if (gen !== S.gen) return;
+        if (ch.type === 'removed') { S.debts.delete(ch.doc.id); continue; }
+        try { const v = await unseal(key, ch.doc.data()); if (gen === S.gen) S.debts.set(ch.doc.id, { ...v, id: ch.doc.id }); } catch {}
+      }
+      if (gen === S.gen) render();
+    });
+  });
   render();
 }
 async function saveCfg(id, obj) {
@@ -549,6 +564,8 @@ function lock() {
   if (unsub) { unsub(); unsub = null; }
   if (unsubBg) { unsubBg(); unsubBg = null; }
   if (unsubCfg) { unsubCfg(); unsubCfg = null; }
+  if (unsubDebt) { unsubDebt(); unsubDebt = null; }
+  S.debts = new Map(); S.dpanel = null;
   S.bg = new Map(); S.bpanel = null; S.profile = {}; S.cpanel = null; S.profDraft = null; applyCats(null);
   clearTimeout(loadTimer);
   S.key = null; S.raw = null; S.pending = null; S.recCode = ''; S.panel = ''; S.shownCode = ''; S.tx = new Map(); closeSheet();
@@ -557,7 +574,7 @@ function lock() {
   render();
 }
 async function wipe() {
-  for (const c of [txCol, bgCol, cfgCol]) {
+  for (const c of [txCol, bgCol, cfgCol, debtCol]) {
     const all = await c.get();
     for (const d of all.docs) await c.doc(d.id).delete();
   }
@@ -584,6 +601,12 @@ function startDemo() {
     if (d.getDay() === 0) add(d, 'chi', 200000 + rnd() * 300000, 'giadinh', 'Đi chợ cuối tuần');
   }
   S.bg = new Map(DEFAULT_BUDGETS.map((b, i) => ['b' + i, { ...b, id: 'b' + i }]));
+  const dd = (n) => ymd(addDays(t, n));
+  S.debts = new Map([
+    ['d1', { id: 'd1', k: 'cho', who: 'Anh Minh', amt: 2000000, d: dd(-20), due: dd(-2), note: 'Mượn sửa xe', pays: [{ a: 500000, d: dd(-10) }], done: false, ts: 1 }],
+    ['d2', { id: 'd2', k: 'cho', who: 'Lan', amt: 300000, d: dd(-5), due: dd(10), note: 'Tiền vé', pays: [], done: false, ts: 2 }],
+    ['d3', { id: 'd3', k: 'no', who: 'Chị Hà', amt: 1500000, d: dd(-15), due: dd(2), note: 'Mua điện thoại', pays: [{ a: 500000, d: dd(-7) }], done: false, ts: 3 }],
+  ]);
   S.welcome = true;
   S.demo = true; S.key = null; S.tx = tx; S.loading = false; S.stale = false; S.loadErr = ''; S.gate = 'app';
   render();
@@ -730,7 +753,7 @@ function donutSVG(rows, totalV) {
   return `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="${r}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="22"/>${arcs}<circle cx="100" cy="100" r="60" fill="rgba(8,17,19,.55)" stroke="rgba(255,255,255,.08)"/></svg>`;
 }
 function partOfDay() { const h = new Date().getHours(); return h < 11 ? 'sáng' : h < 13 ? 'trưa' : h < 18 ? 'chiều' : 'tối'; }
-const NAV = [['top', 'home', 'Tổng quan'], ['budgets', 'piggy', 'Hạn mức'], ['stats', 'chart', 'Thống kê'], ['ledger', 'book', 'Sổ ghi'], ['security', 'wrench', 'Bảo mật']];
+const NAV = [['top', 'home', 'Tổng quan'], ['budgets', 'piggy', 'Hạn mức'], ['debts', 'debt', 'Sổ nợ'], ['stats', 'chart', 'Thống kê'], ['ledger', 'book', 'Sổ ghi'], ['security', 'wrench', 'Bảo mật']];
 
 function renderApp() {
   const [s, e] = rangeOf(S.view, S.anchor);
@@ -791,7 +814,7 @@ function renderApp() {
     }
   }
 
-  const alerts = remindLines(today()).length;
+  const alerts = remindLines(today()).length + debtAlerts().length;
   const name = S.demo ? 'bạn' : (S.profile && S.profile.name) || (vault && vault.user) || 'bạn';
   app.innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Menu">
@@ -832,6 +855,7 @@ function renderApp() {
             </section>
             ${budgetCard()}
           </div>
+          ${debtsCard()}
           ${chart}
           <section class="card" id="ledger"><div class="card-head"><h3>Các khoản ${WORD[S.view]}</h3><p>${sorted.length} khoản</p></div><div class="ledger">${ledger}</div></section>
         </div>
@@ -845,6 +869,82 @@ function renderApp() {
     </main>
   </div>`;
   syncWelcome(name);
+}
+
+// ---------- sổ nợ: người khác nợ tôi / tôi nợ ----------
+const DK = { cho: 'Người khác nợ tôi', no: 'Tôi nợ' };
+const debtsList = () => [...(S.debts || new Map()).values()];
+const debtPaid = (x) => (x.pays || []).reduce((s, p) => s + (p.a || 0), 0);
+const debtLeft = (x) => Math.max(0, (x.amt || 0) - debtPaid(x));
+const debtOpen = (x) => !x.done && debtLeft(x) > 0;
+function dueInfo(x) {
+  if (!x.due || !debtOpen(x)) return null;
+  const days = Math.round((parse(x.due) - today()) / 864e5);
+  return { days, level: days < 0 ? 'over' : days <= 3 ? 'warn' : 'ok',
+    text: days < 0 ? `Quá hạn ${-days} ngày` : days === 0 ? 'Đến hạn hôm nay' : `Còn ${days} ngày (hạn ${dm(parse(x.due))})` };
+}
+function debtAlerts() { return debtsList().map((x) => ({ x, di: dueInfo(x) })).filter((o) => o.di && o.di.level !== 'ok'); }
+function debtsCard() {
+  if (S.dpanel) return `<section class="card" id="debts"><div class="card-head"><h3>${S.dpanel.id ? 'Sửa khoản nợ' : 'Thêm khoản nợ'}</h3></div>${debtForm()}</section>`;
+  const k = S.dk || 'cho', all = debtsList();
+  const sum = (kk) => all.filter((x) => x.k === kk && debtOpen(x)).reduce((s, x) => s + debtLeft(x), 0);
+  const ofK = all.filter((x) => x.k === k);
+  const doneN = ofK.filter((x) => !debtOpen(x)).length;
+  const list = ofK.filter((x) => S.dShowDone || debtOpen(x)).sort((a, b) => (debtOpen(b) - debtOpen(a)) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : (b.ts || 0) - (a.ts || 0)));
+  const rows = list.map((x) => {
+    const di = dueInfo(x), paid = debtPaid(x), open = debtOpen(x);
+    return `<button class="debt-row lv-${di ? di.level : 'ok'}${open ? '' : ' is-done'}" data-act="dedit" data-id="${esc(x.id)}">
+      <span class="who-ava ${x.k}">${esc((x.who || '?').trim()[0] || '?')}</span>
+      <span class="cat-main"><span class="cat-top"><span>${esc(x.who)}</span><b class="${x.k === 'cho' ? 'amt-in' : 'amt-out'}">${open ? money(debtLeft(x)) : 'Đã xong'}</b></span>
+      <span class="track"><i style="width:${Math.min(100, x.amt ? (paid / x.amt) * 100 : 0).toFixed(1)}%"></i></span>
+      <span class="bg-note">${open ? (di ? di.text : 'Chưa đặt hạn trả') : 'Đã trả hết'} · đã trả ${short(paid)}/${short(x.amt)}${x.note ? ' · ' + esc(x.note) : ''}</span></span></button>`;
+  }).join('');
+  return `<section class="card" id="debts"><div class="card-head"><h3>Sổ nợ</h3><button class="mini-add" data-act="dadd">+ Thêm khoản nợ</button></div>
+    <div class="debt-sum">
+      <button data-act="dk" data-k="cho" aria-pressed="${k === 'cho'}"><span>Người khác nợ tôi</span><b class="amt-in">${money(sum('cho'))}</b></button>
+      <button data-act="dk" data-k="no" aria-pressed="${k === 'no'}"><span>Tôi nợ</span><b class="amt-out">${money(sum('no'))}</b></button>
+    </div>
+    ${rows ? `<div class="bg-list">${rows}</div>` : `<p class="pct" style="text-align:left">${k === 'cho' ? 'Chưa có ai nợ bạn.' : 'Bạn không nợ ai.'} Bấm <b>+ Thêm khoản nợ</b> để ghi.</p>`}
+    ${doneN ? `<button class="link" data-act="ddonetoggle" style="align-self:flex-start">${S.dShowDone ? 'Ẩn' : 'Xem'} ${doneN} khoản đã trả xong</button>` : ''}
+  </section>`;
+}
+function debtForm() {
+  const p = S.dpanel, paid = (p.pays || []).reduce((s, x) => s + x.a, 0);
+  return `<form id="debtForm" class="stack" novalidate>
+    <div class="mini-seg" style="align-self:flex-start"><button type="button" data-act="dkind" data-k="cho" aria-pressed="${p.k === 'cho'}">Người khác nợ tôi</button><button type="button" data-act="dkind" data-k="no" aria-pressed="${p.k === 'no'}">Tôi nợ</button></div>
+    <label class="field">${p.k === 'cho' ? 'Ai nợ bạn' : 'Bạn nợ ai'}<input id="dWho" maxlength="40" value="${esc(p.who || '')}" placeholder="VD: Anh Minh"></label>
+    <div class="fields"><label class="field">Số tiền (đồng)<input id="dAmt" inputmode="numeric" value="${p.amt ? NF.format(p.amt) : ''}" placeholder="VD: 2.000.000"></label><label class="field">Ngày mượn<input id="dDate" type="date" value="${esc(p.d || ymd(today()))}"></label></div>
+    <div class="fields"><label class="field">Hạn trả (không bắt buộc)<input id="dDue" type="date" value="${esc(p.due || '')}"></label><label class="field">Ghi chú<input id="dNote" maxlength="60" value="${esc(p.note || '')}" placeholder="VD: mượn sửa xe"></label></div>
+    ${p.id ? `<div class="pay-box">
+      <div class="cat-top"><span>Đã trả</span><b>${money(paid)} / ${money(p.amt || 0)}</b></div>
+      ${(p.pays || []).map((x, i) => `<div class="pay-row"><span>${dm(parse(x.d))}/${parse(x.d).getFullYear()}</span><b>${money(x.a)}</b><button type="button" class="icon-btn" data-act="dpaydel" data-i="${i}" aria-label="Xóa lần trả này">×</button></div>`).join('')}
+      ${p.done ? '' : `<div class="pay-add"><input id="pAmt" inputmode="numeric" placeholder="Số tiền trả" aria-label="Số tiền trả lần này"><input id="pDate" type="date" value="${ymd(today())}" aria-label="Ngày trả"><button type="button" class="btn ghost" data-act="dpay">Ghi nhận trả</button></div>`}
+      <button type="button" class="btn ghost" data-act="ddone">${p.done ? 'Mở lại khoản này' : 'Đánh dấu đã trả hết'}</button>
+    </div>` : ''}
+    ${S.dErr ? `<p class="err">${esc(S.dErr)}</p>` : ''}
+    <div class="actions">${p.id ? `<button type="button" class="btn ghost danger${p.armed ? ' armed' : ''}" data-act="ddel">${p.armed ? 'Bấm lần nữa để xóa' : 'Xóa'}</button>` : ''}<button type="button" class="btn ghost" data-act="dcancel">${p.id ? 'Đóng' : 'Hủy'}</button><button type="submit" class="btn primary">Lưu</button></div>
+  </form>`;
+}
+function readDebtForm() {
+  const p = S.dpanel; if (!p) return;
+  const v = (id) => (($('#' + id) || {}).value);
+  if ($('#dWho')) { p.who = v('dWho').trim(); p.amt = Number(digits(v('dAmt') || '') || 0); p.d = v('dDate') || p.d; p.due = v('dDue') || ''; p.note = (v('dNote') || '').trim(); }
+}
+async function saveDebt(keepOpen) {
+  readDebtForm();
+  const p = S.dpanel;
+  if (!p.who) { S.dErr = p.k === 'cho' ? 'Nhập tên người nợ bạn.' : 'Nhập tên người bạn nợ.'; return render(); }
+  if (!p.amt) { S.dErr = 'Nhập số tiền lớn hơn 0.'; return render(); }
+  const obj = { k: p.k, who: p.who.slice(0, 40), amt: p.amt, d: p.d || ymd(today()), due: p.due || '', note: (p.note || '').slice(0, 60), pays: p.pays || [], done: !!p.done, ts: p.ts || Date.now() };
+  try {
+    let id = p.id;
+    if (S.demo) id = id || 'd' + Date.now();
+    else { const ref = id ? debtCol.doc(id) : debtCol.doc(); id = ref.id; await ref.set(await seal(S.key, obj)); }
+    S.debts.set(id, { ...obj, id });
+    S.dErr = ''; S.dk = obj.k;
+    S.dpanel = keepOpen ? { ...obj, id } : null;
+    render();
+  } catch (e) { S.dErr = errText(e); render(); }
 }
 
 // ---------- hạn mức chi tiêu + nhắc nhở ----------
@@ -862,12 +962,15 @@ function remindLines(anchor) {
   return budgetsSorted().map((b) => ({ b, st: budgetStatus(b, anchor) })).filter((x) => x.st.level !== 'ok');
 }
 function remindBanner() {
-  const items = remindLines(today());
-  if (!items.length) return '';
-  const over = items.some((x) => x.st.level === 'over');
-  return `<div class="remind lv-${over ? 'over' : 'warn'}" role="status">${li('bell', { size: 30, trigger: 'loop', delay: 2500, secondary: over ? '#ff8b7b' : '#f2c46b' })}<div><b>Nhắc nhở hạn mức</b><ul>${items.map(({ b, st }) => `<li>${esc(CAT_NAME[b.cat] || b.cat)}: ${st.level === 'over'
+  const items = remindLines(today()), debts = debtAlerts();
+  if (!items.length && !debts.length) return '';
+  const over = items.some((x) => x.st.level === 'over') || debts.some((o) => o.di.level === 'over');
+  const bl = items.map(({ b, st }) => `<li>${esc(CAT_NAME[b.cat] || b.cat)}: ${st.level === 'over'
     ? `đã chi ${money(st.spent)}, <b>vượt ${money(-st.left)}</b> hạn mức ${PER_WORD[b.per]} này`
-    : `đã dùng ${Math.round(st.pct * 100)}% hạn mức ${PER_WORD[b.per]} này, còn ${money(st.left)}`}</li>`).join('')}</ul></div></div>`;
+    : `đã dùng ${Math.round(st.pct * 100)}% hạn mức ${PER_WORD[b.per]} này, còn ${money(st.left)}`}</li>`);
+  const dl = debts.map(({ x, di }) => `<li>${x.k === 'cho' ? `<b>${esc(x.who)}</b> nợ bạn ${money(debtLeft(x))}` : `Bạn nợ <b>${esc(x.who)}</b> ${money(debtLeft(x))}`}: ${di.level === 'over' ? `<b>${di.text.toLowerCase()}</b>` : di.text.toLowerCase()}</li>`);
+  const title = items.length && debts.length ? 'Nhắc nhở hạn mức và nợ' : debts.length ? 'Nhắc nhở nợ' : 'Nhắc nhở hạn mức';
+  return `<div class="remind lv-${over ? 'over' : 'warn'}" role="status">${li('bell', { size: 30, trigger: 'loop', delay: 2500, secondary: over ? '#ff8b7b' : '#f2c46b' })}<div><b>${title}</b><ul>${[...dl, ...bl].join('')}</ul></div></div>`;
 }
 function budgetForm() {
   const p = S.bpanel;
@@ -915,18 +1018,20 @@ function showToast(msg, level) {
 function welcomeHTML(name) {
   const tk = ymd(today());
   const chiToday = [...S.tx.values()].reduce((x, t) => x + (t.k === 'chi' && t.d === tk ? t.a : 0), 0);
-  const warn = remindLines(today());
+  const warn = remindLines(today()), dwarn = debtAlerts();
   const line = chiToday
     ? `Hôm nay bạn đã chi <b>${money(chiToday)}</b>.`
     : 'Hôm nay bạn chưa chi đồng nào. Giữ vững nhé!';
   const extra = warn.length
     ? `<p class="w-warn">${li('bell', { size: 20, trigger: 'loop', delay: 1500, secondary: '#f2c46b' })}${warn.length} hạn mức đang sắp chạm hoặc đã vượt.</p>`
     : '';
+  const dOver = dwarn.filter((o) => o.di.level === 'over').length;
+  const extraD = dwarn.length ? `<p class="w-warn">${li('bell', { size: 20, trigger: 'loop', delay: 1500, secondary: '#ff8b7b' })}${dwarn.length} khoản nợ ${dOver ? `(${dOver} quá hạn) ` : ''}cần để ý.</p>` : '';
   return `<div class="welcome-scrim" data-act="wclose"><div class="welcome shine-box" role="dialog" aria-modal="true" aria-labelledby="wTitle" data-stop="1">
     <span class="sheen" aria-hidden="true"></span>
     <span class="avatar big">${avatarInner(S.profile, name)}</span>
     <h2 id="wTitle">${esc(name)} ơi, hôm nay đã tiết kiệm chưa?</h2>
-    <p>${line}</p>${extra}
+    <p>${line}</p>${extra}${extraD}
     <div class="actions" style="width:100%"><button class="btn ghost" data-act="wclose">Vào sổ</button><button class="btn primary" data-act="wadd">${li('plus', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Ghi khoản</button></div>
   </div></div>`;
 }
@@ -1180,7 +1285,7 @@ function showErr(m) { fErr.textContent = m; fErr.hidden = false; }
 
 fAmt.addEventListener('input', () => setAmt(getAmt()));
 document.addEventListener('input', (ev) => {
-  if (ev.target.id === 'bAmt') { const n = Number(digits(ev.target.value) || 0); ev.target.value = n ? NF.format(n) : ''; }
+  if (['bAmt', 'dAmt', 'pAmt'].includes(ev.target.id)) { const n = Number(digits(ev.target.value) || 0); ev.target.value = n ? NF.format(n) : ''; }
 });
 $('#sheet').addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -1263,6 +1368,33 @@ document.addEventListener('click', async (ev) => {
     S.syncOffArm = false; localStorage.removeItem('gc.sync'); setSync('off'); S.panel = ''; S.panelMsg = 'Đã tắt đồng bộ trên máy này. Dữ liệu trong máy vẫn giữ nguyên.'; render();
   }
   else if (act === 'pairshow') { S.pairShow = !S.pairShow; render(); }
+  else if (act === 'dk') { S.dk = b.dataset.k; render(); }
+  else if (act === 'ddonetoggle') { S.dShowDone = !S.dShowDone; render(); }
+  else if (act === 'dadd') {
+    S.dpanel = { id: null, k: S.dk || 'cho', who: '', amt: 0, d: ymd(today()), due: '', note: '', pays: [], done: false }; S.dErr = ''; render();
+    const c = $('#debts'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  else if (act === 'dedit') { const x = S.debts.get(b.dataset.id); if (x) { S.dpanel = { ...x, pays: [...(x.pays || [])] }; S.dErr = ''; render(); } }
+  else if (act === 'dkind') { readDebtForm(); S.dpanel.k = b.dataset.k; render(); }
+  else if (act === 'dcancel') { S.dpanel = null; S.dErr = ''; render(); }
+  else if (act === 'dpay') {
+    readDebtForm();
+    const a = Number(digits(($('#pAmt') || {}).value || '') || 0), d = ($('#pDate') || {}).value || ymd(today());
+    if (!a) { S.dErr = 'Nhập số tiền trả lần này.'; return render(); }
+    const left = (S.dpanel.amt || 0) - (S.dpanel.pays || []).reduce((s, x) => s + x.a, 0);
+    if (a > left) { S.dErr = `Số trả lớn hơn số còn nợ (${money(Math.max(0, left))}).`; return render(); }
+    S.dpanel.pays = [...(S.dpanel.pays || []), { a, d }];
+    if (a === left) S.dpanel.done = true;
+    await saveDebt(true);
+    if (S.dpanel && S.dpanel.done) showToast(`Đã trả xong khoản ${S.dpanel.k === 'cho' ? 'của ' + S.dpanel.who : 'nợ ' + S.dpanel.who}`, 'ok');
+  }
+  else if (act === 'dpaydel') { readDebtForm(); S.dpanel.pays.splice(Number(b.dataset.i), 1); S.dpanel.done = false; await saveDebt(true); }
+  else if (act === 'ddone') { readDebtForm(); S.dpanel.done = !S.dpanel.done; await saveDebt(!S.dpanel.done); }
+  else if (act === 'ddel') {
+    if (!S.dpanel.armed) { readDebtForm(); S.dpanel.armed = true; return render(); }
+    try { if (!S.demo) await debtCol.doc(S.dpanel.id).delete(); S.debts.delete(S.dpanel.id); S.dpanel = null; render(); }
+    catch (e) { S.dErr = errText(e); render(); }
+  }
   else if (act === 'ck') { S.ck = b.dataset.k; render(); }
   else if (act === 'cadd') { const k = S.ck || 'chi'; S.cpanel = { id: null, k, name: '', icon: ICON_SET[0], color: COLOR_SET[0] }; S.cErr = ''; render(); const c = $('#cats'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   else if (act === 'cedit') { const c = CAT_LIST.find((x) => x.id === b.dataset.id); if (c) { S.cpanel = { ...c }; S.cErr = ''; render(); } }
@@ -1345,6 +1477,7 @@ document.addEventListener('submit', async (ev) => {
   const f = ev.target;
   if (f.id === 'budgetForm') { ev.preventDefault(); return saveBudget(); }
   if (f.id === 'catForm') { ev.preventDefault(); return saveCat(); }
+  if (f.id === 'debtForm') { ev.preventDefault(); return saveDebt(false); }
   if (f.id === 'syncForm') {
     ev.preventDefault();
     const tok = (($('#syncTok') || {}).value || '').trim();
