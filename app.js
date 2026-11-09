@@ -19,7 +19,7 @@ const LI_KEY = {
   giaitri: 'zsyzaums', caulong: 'wmqqbxlm', hoctap: 'lufygyut', giadinh: 'xvmmqwjv', khac: 'lzsupfwm',
   luong: 'ylscktzo', thuong: 'mchvarrg', banhang: 'uepnupwh', dautu: 'fcwmlcjj', duoccho: 'ewmfucya', khacthu: 'kkdnopsh',
   home: 'pgirtdfe', piggy: 'opqmrqco', chart: 'fcwmlcjj', book: 'zbtbhzsg', wrench: 'fvkvwmsp', plus: 'ueoydrft',
-  exit: 'txuhvtae', bell: 'ypbuyaqd', warning: 'pilfbsjh', coins: 'kkdnopsh', calendar: 'laobovmg', cloud: 'evearxpv', check: 'pxixoqxa',
+  exit: 'txuhvtae', bell: 'ypbuyaqd', eye: 'knitbwfa', warning: 'pilfbsjh', coins: 'kkdnopsh', calendar: 'laobovmg', cloud: 'evearxpv', check: 'pxixoqxa',
 };
 const CAT_HEX = {
   an: '#f4a259', dilai: '#62b6f0', muasam: '#e987b8', hoadon: '#e8c65a', nha: '#a699f5', suckhoe: '#f47c6c', giaitri: '#4fd6d0',
@@ -179,9 +179,9 @@ function lsKeys() { const out = []; for (let i = 0; i < localStorage.length; i++
 function localDB() {
   const listeners = new Set();
   const read = (p) => { const s = localStorage.getItem(PFX + p); return s ? JSON.parse(s) : null; };
-  const write = (p, v) => { try { localStorage.setItem(PFX + p, JSON.stringify(v)); } catch { throw { code: 'quota_exceeded' }; } };
+  const write = (p, v) => { try { localStorage.setItem(PFX + p, JSON.stringify(v)); } catch { throw { code: 'quota_exceeded' }; } stamp(p); };
   const depth = (p) => p.split('/').length;
-  const notify = () => { setTimeout(() => listeners.forEach((f) => f()), 0); scheduleSnap(); };
+  const notify = () => { setTimeout(() => listeners.forEach((f) => f()), 0); scheduleSnap(); schedulePush(); };
   addEventListener('storage', notify);
   const snap = (k, v) => ({ id: k.split('/').pop(), exists: v != null, data: () => (v == null ? undefined : v), metadata: { fromCache: false, hasPendingWrites: false } });
   const kids = (path) => lsKeys().filter((k) => k.startsWith(path + '/') && depth(k) === depth(path) + 1).sort();
@@ -190,7 +190,7 @@ function localDB() {
     async get() { return snap(path, read(path)); },
     async set(d) { write(path, d); notify(); },
     async update(d) { const cur = read(path); if (!cur) throw { code: 'invalid_argument' }; write(path, { ...cur, ...d }); notify(); },
-    async delete() { localStorage.removeItem(PFX + path); notify(); },
+    async delete() { localStorage.removeItem(PFX + path); tomb(path); notify(); },
     collection: (p) => col(path + '/' + p),
   });
   const col = (path) => ({
@@ -211,7 +211,106 @@ function localDB() {
       return () => listeners.delete(fire);
     },
   });
-  return { doc, collection: col };
+  return { doc, collection: col, refresh: () => setTimeout(() => listeners.forEach((f) => f()), 0) };
+}
+
+// ---------- đồng bộ qua kho GitHub riêng tư (chỉ gửi dữ liệu ĐÃ MÃ HÓA) ----------
+// Mỗi mục có dấu thời gian sửa (gc.meta) và dấu xóa (gc.del) để gộp dữ liệu giữa các máy.
+const SYNC_REPO = 'yayami3152003/ghi-chu-data', SYNC_PATH = 'so.json';
+const jget = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
+const jset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+function stamp(p) { const m = jget('gc.meta', {}), d = jget('gc.del', {}); m[p] = Date.now(); delete d[p]; jset('gc.meta', m); jset('gc.del', d); }
+function tomb(p) { const m = jget('gc.meta', {}), d = jget('gc.del', {}); d[p] = Date.now(); delete m[p]; jset('gc.meta', m); jset('gc.del', d); }
+// Sau khi nhập file / khôi phục bản tự lưu: coi toàn bộ dữ liệu hiện tại là mới nhất
+function stampAll(oldKeys) {
+  const now = Date.now(), m = {}, d = jget('gc.del', {});
+  for (const k of lsKeys()) { m[k] = now; delete d[k]; }
+  for (const k of oldKeys || []) if (!m[k]) d[k] = now;
+  jset('gc.meta', m); jset('gc.del', d);
+}
+const syncToken = () => { const s = jget('gc.sync', null); return s && s.token ? s.token : ''; };
+const SY = { state: 'off', at: 0, msg: '' };
+function setSync(state, msg) { SY.state = state; SY.msg = msg || ''; if (state === 'ok') SY.at = Date.now(); const el = $('#syncLine'); if (el) el.innerHTML = syncLine(); }
+function syncLine() {
+  if (!syncToken()) return 'Chưa bật đồng bộ';
+  if (SY.state === 'busy') return 'Đang đồng bộ…';
+  if (SY.state === 'err') return 'Lỗi đồng bộ: ' + esc(SY.msg);
+  if (SY.at) { const d = new Date(SY.at); return `Đã đồng bộ lúc ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+  return 'Đồng bộ đã bật';
+}
+const u8b64 = (s) => b64(te.encode(s));
+const b64u8 = (s) => td.decode(unb64(s.replace(/\s/g, '')));
+async function gh(method, url, body) {
+  const r = await fetch('https://api.github.com' + url, {
+    method, cache: 'no-store',
+    headers: { Authorization: 'Bearer ' + syncToken(), Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.status === 404) return null;
+  if (r.status === 401 || r.status === 403) throw new Error('Mã truy cập GitHub không đúng, hết hạn hoặc thiếu quyền.');
+  if (r.status === 409 || r.status === 422) { const e = new Error('conflict'); e.conflict = true; throw e; }
+  if (!r.ok) throw new Error('GitHub trả lỗi ' + r.status);
+  return r.json();
+}
+async function pullRemote() {
+  const j = await gh('GET', `/repos/${SYNC_REPO}/contents/${SYNC_PATH}`);
+  if (!j) return { sha: null, data: null };
+  let content = j.content;
+  if (!content && j.sha) content = (await gh('GET', `/repos/${SYNC_REPO}/git/blobs/${j.sha}`)).content;
+  return { sha: j.sha, data: JSON.parse(b64u8(content)) };
+}
+function localState() { return { v: 1, items: collectItems(), meta: jget('gc.meta', {}), del: jget('gc.del', {}) }; }
+// Gộp: mỗi mục lấy bản sửa sau cùng; mục bị xóa sau lần sửa cuối thì xóa
+function mergeState(a, b) {
+  const out = { v: 1, items: {}, meta: {}, del: {} };
+  const keys = new Set([...Object.keys(a.items), ...Object.keys(b.items), ...Object.keys(a.del), ...Object.keys(b.del)]);
+  for (const k of keys) {
+    const ta = a.items[k] !== undefined ? (a.meta[k] || 0) : -1, tb = b.items[k] !== undefined ? (b.meta[k] || 0) : -1;
+    const td2 = Math.max(a.del[k] || 0, b.del[k] || 0);
+    const best = ta >= tb ? (ta >= 0 ? ['a', ta] : null) : ['b', tb];
+    if (best && (!td2 || best[1] > td2)) { out.items[k] = (best[0] === 'a' ? a : b).items[k]; out.meta[k] = best[1]; }
+    else if (td2) out.del[k] = td2;
+  }
+  return out;
+}
+function applyState(st) {
+  const before = new Set(lsKeys());
+  let changed = false;
+  for (const [k, v] of Object.entries(st.items)) { const s = JSON.stringify(v); if (localStorage.getItem(PFX + k) !== s) { localStorage.setItem(PFX + k, s); changed = true; } before.delete(k); }
+  for (const k of before) { localStorage.removeItem(PFX + k); changed = true; }
+  jset('gc.meta', st.meta); jset('gc.del', st.del);
+  return changed;
+}
+const sameState = (a, b) => JSON.stringify(a.items) === JSON.stringify(b.items) && JSON.stringify(a.del) === JSON.stringify(b.del);
+let syncing = null, pushT;
+function schedulePush() { if (!syncToken()) return; clearTimeout(pushT); pushT = setTimeout(() => syncNow().catch(() => {}), 3000); }
+// Kéo về, gộp, ghi vào máy, rồi đẩy lên nếu trên kho còn thiếu
+function syncNow() {
+  if (!syncToken()) return Promise.resolve(false);
+  if (syncing) return syncing.then(() => syncNow());
+  syncing = (async () => {
+    setSync('busy');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const remote = await pullRemote();
+        const local = localState();
+        const merged = remote.data ? mergeState(local, remote.data) : local;
+        const changed = applyState(merged);
+        if (changed) { const v = localStorage.getItem(PFX + 'so/vault'); vault = v ? JSON.parse(v) : vault; if (db && db.refresh) db.refresh(); }
+        if (!remote.data || !sameState(merged, remote.data)) {
+          if (!merged.items['so/vault']) { setSync('ok'); return changed; }
+          await gh('PUT', `/repos/${SYNC_REPO}/contents/${SYNC_PATH}`, { message: 'cap nhat', content: u8b64(JSON.stringify(merged)), ...(remote.sha ? { sha: remote.sha } : {}) });
+        }
+        setSync('ok');
+        return changed;
+      } catch (e) {
+        if (e.conflict && attempt < 2) continue;
+        setSync('err', e.message || 'không kết nối được');
+        throw e;
+      }
+    }
+  })().finally(() => { syncing = null; });
+  return syncing;
 }
 
 // ---------- sao lưu / khôi phục bằng file (file đã mã hóa, cần PIN hoặc mã khôi phục để mở) ----------
@@ -246,8 +345,10 @@ async function listSnaps() {
 async function restoreSnap(day) {
   const s = await snapRun('readonly', (st) => st.get(day));
   if (!s || !s.items || !s.items['so/vault']) throw new Error('Không đọc được bản sao lưu này.');
-  for (const k of lsKeys()) localStorage.removeItem(PFX + k);
+  const old = lsKeys();
+  for (const k of old) localStorage.removeItem(PFX + k);
   for (const [k, v] of Object.entries(s.items)) localStorage.setItem(PFX + k, JSON.stringify(v));
+  stampAll(old); schedulePush();
 }
 // Tự tải file sao lưu khi đã quá 7 ngày chưa sao lưu (chạy ngay sau khi đăng nhập)
 function autoFileBackup() {
@@ -272,9 +373,11 @@ async function importBackup(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch { throw new Error('File này không đọc được. Chọn đúng file ghi-chu-sao-luu-….json.'); }
   if (!data || data.app !== 'ghi-chu' || !data.items || !data.items['so/vault']) throw new Error('Đây không phải file sao lưu của sổ này.');
-  for (const k of lsKeys()) localStorage.removeItem(PFX + k);
+  const old = lsKeys();
+  for (const k of old) localStorage.removeItem(PFX + k);
   try { for (const [k, v] of Object.entries(data.items)) localStorage.setItem(PFX + k, JSON.stringify(v)); }
   catch { throw new Error('Bộ nhớ trình duyệt không đủ chỗ để nhập file này.'); }
+  stampAll(old); schedulePush();
 }
 async function afterImport() {
   S.gen++; if (unsub) { unsub(); unsub = null; }
@@ -306,6 +409,16 @@ async function boot() {
   txCol = vaultRef.collection('tx');
   bgCol = vaultRef.collection('bg');
   cfgCol = vaultRef.collection('cfg');
+  // Mở từ mã QR "Kết nối máy khác": lưu mã đồng bộ rồi xóa nó khỏi thanh địa chỉ
+  if (location.hash.startsWith('#ket-noi=')) {
+    const tok = decodeURIComponent(location.hash.slice(9));
+    history.replaceState(null, '', location.pathname + location.search);
+    if (/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(tok)) { jset('gc.sync', { token: tok }); S.gateNote = 'Đã kết nối đồng bộ. Đăng nhập bằng tài khoản bạn đã tạo.'; }
+  }
+  if (syncToken()) {
+    S.gateMsg = 'Đang tải sổ từ kho đồng bộ…'; render();
+    await Promise.race([syncNow().catch((e) => console.warn('Đồng bộ lỗi:', e && e.message)), sleep(10000)]);
+  }
   const snap = await vaultRef.get();
   vault = snap.exists ? snap.data() : null;
   S.gate = vault ? 'unlock' : 'setup';
@@ -485,7 +598,17 @@ function gateShell(inner) {
 }
 function renderGate() {
   const g = S.gate;
-  if (g === 'boot') return gateShell(`<h1>Ghi chú cá nhân</h1><p>Đang kết nối…</p><div class="skel"></div><div class="skel" style="width:70%"></div>`);
+  if (g === 'boot') return gateShell(`<h1>Ghi chú cá nhân</h1><p>${esc(S.gateMsg || 'Đang mở…')}</p><div class="skel"></div><div class="skel" style="width:70%"></div>`);
+  if (g === 'gsync') return gateShell(`
+    <h1>Mở sổ từ máy khác</h1>
+    <p>Cách nhanh nhất: trên máy đã có sổ, vào <b>Tài khoản & sao lưu → Kết nối máy khác</b> rồi quét mã QR hiện ra bằng camera của máy này.</p>
+    <p>Hoặc dán mã truy cập GitHub (bắt đầu bằng <b>github_pat_</b>) vào đây:</p>
+    <form id="gateForm" data-kind="gsync">
+      <label class="field">Mã truy cập GitHub<input id="syncTok" type="password" autocomplete="off" spellcheck="false"></label>
+      ${S.gateErr ? `<p class="err">${esc(S.gateErr)}</p>` : ''}
+      <button class="btn primary" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Đang tải sổ…' : 'Kết nối và tải sổ'}</button>
+    </form>
+    <button class="link" data-act="gback">Quay lại</button>`);
   if (g === 'nodb') return gateShell(`<h1>Ghi chú cá nhân</h1><p>${esc(S.gateMsg)}</p><button class="btn primary" data-act="demo">Xem thử với dữ liệu mẫu</button>`);
   if (g === 'offline') return gateShell(`<h1>Chưa kết nối được</h1><p>Không đọc được sổ lúc này. Kiểm tra mạng rồi thử lại.</p><button class="btn primary" data-act="retry">Thử lại</button>`);
   if (g === 'setup') return gateShell(`
@@ -500,6 +623,7 @@ function renderGate() {
       <button class="btn primary" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Đang tạo…' : 'Tạo tài khoản'}</button>
     </form>
     <p class="fine">Sau khi tạo, bạn nhận một <b>mã khôi phục</b>. Quên mật khẩu thì dùng mã đó để đặt mật khẩu mới mà không mất dữ liệu.</p>
+    <button class="btn ghost" data-act="gsync" style="flex:none">Đã có sổ ở máy khác? Mở sổ đó</button>
     <label class="link" for="importFile">Đổi máy? Mở sổ từ file sao lưu</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>`);
   if (g === 'reccode') return gateShell(`
@@ -911,6 +1035,23 @@ function securityCard() {
     <div class="actions"><button class="btn ghost" data-act="panel" data-p="">Hủy</button><label class="btn primary" for="importFile">Chọn file sao lưu</label></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>`;
   else if (S.panel === 'profile') body = profilePanel();
+  else if (S.panel === 'sync') body = `
+    <p class="pct" style="text-align:left">Đồng bộ lưu bản <b>đã mã hóa</b> của sổ vào kho riêng tư <b>${SYNC_REPO}</b> trên GitHub của bạn. Máy khác có mã này cộng với tên đăng nhập và mật khẩu mới mở được sổ.</p>
+    <form id="syncForm" class="stack" novalidate>
+      <label class="field">Mã truy cập GitHub (bắt đầu bằng github_pat_)<input id="syncTok" type="password" autocomplete="off" spellcheck="false"></label>
+      ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
+      <div class="actions"><button type="button" class="btn ghost" data-act="panel" data-p="">Hủy</button><button type="submit" class="btn primary" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Đang kiểm tra…' : 'Bật đồng bộ'}</button></div>
+    </form>`;
+  else if (S.panel === 'pair') {
+    const url = location.origin + location.pathname + '#ket-noi=' + encodeURIComponent(syncToken());
+    let svg = '';
+    try { const q = window.qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag(5, 3); } catch {}
+    body = `
+    <p class="pct" style="text-align:left">Mở camera của điện thoại và quét mã này. Trang sẽ tự kết nối, bạn chỉ cần đăng nhập bằng tên và mật khẩu đã tạo.</p>
+    <div class="pair-box${S.pairShow ? ' show' : ''}">${svg}<button class="pair-cover" data-act="pairshow">${li('eye', { size: 30, target: 'button' })}Bấm để hiện mã QR</button></div>
+    <p class="pct" style="text-align:left">Mã này giữ bí mật như chìa khóa. Không chụp gửi cho ai. Người có mã mà không có mật khẩu thì vẫn không đọc được sổ.</p>
+    <div class="actions"><button class="btn ghost" data-act="pairshow">${S.pairShow ? 'Ẩn mã' : 'Hiện mã'}</button><button class="btn ghost" data-act="panel" data-p="">Đóng</button></div>`;
+  }
   else if (S.panel === 'snaps') body = `
     <p class="pct" style="text-align:left">Bản tự lưu trong máy, mỗi ngày một bản, giữ ${SNAP_KEEP} ngày. Khôi phục sẽ đưa sổ về đúng lúc đó (các khoản ghi sau đó sẽ mất), rồi đăng nhập lại.</p>
     ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
@@ -923,6 +1064,12 @@ function securityCard() {
     ${S.panelMsg ? `<p class="ok">${esc(S.panelMsg)}</p>` : ''}
     <p class="pct" style="text-align:left">Tên đăng nhập: <b>${esc(vault && vault.user || '')}</b>. Dữ liệu chỉ nằm trong máy này, đã mã hóa.</p>
     <p class="pct" style="text-align:left"><b>Tự động sao lưu:</b> mỗi lần thay đổi, trang tự giữ bản sao trong máy (${SNAP_KEEP} ngày). Quá 7 ngày chưa có file sao lưu thì lúc đăng nhập trang tự tải file về. File sao lưu gần nhất: ${lb ? (days === 0 ? 'hôm nay' : days + ' ngày trước') : '<b>chưa có</b>'}. Hãy cất file lên Drive riêng để phòng mất máy.</p>
+    <div class="sync-box">
+      <div><b>Đồng bộ nhiều máy</b><p class="pct" style="text-align:left" id="syncLine">${syncLine()}</p></div>
+      <div class="actions">${syncToken()
+        ? `<button class="btn primary" data-act="panel" data-p="pair">${li('eye', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Kết nối máy khác (mã QR)</button><button class="btn ghost" data-act="syncnow">Đồng bộ ngay</button><button class="btn ghost danger${S.syncOffArm ? ' armed' : ''}" data-act="syncoff">${S.syncOffArm ? 'Bấm lần nữa để tắt' : 'Tắt trên máy này'}</button>`
+        : `<button class="btn primary" data-act="panel" data-p="sync">${li('cloud', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Bật đồng bộ</button>`}</div>
+    </div>
     <div class="grid2">
       <button class="btn ghost" data-act="profile">Đổi tên, ảnh đại diện</button>
       <button class="btn ghost" data-act="backup">Sao lưu ra file ngay</button>
@@ -1024,6 +1171,14 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'forgot') { S.gate = 'forgot'; S.gateErr = ''; render(); }
   else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
   else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
+  else if (act === 'gsync') { S.gate = 'gsync'; S.gateErr = ''; render(); }
+  else if (act === 'gback') { S.gate = vault ? 'unlock' : 'setup'; S.gateErr = ''; render(); }
+  else if (act === 'syncnow') { try { await syncNow(); S.panelMsg = 'Đã đồng bộ xong.'; } catch (e) { S.panelErr = e.message; } render(); }
+  else if (act === 'syncoff') {
+    if (!S.syncOffArm) { S.syncOffArm = true; return render(); }
+    S.syncOffArm = false; localStorage.removeItem('gc.sync'); setSync('off'); S.panel = ''; S.panelMsg = 'Đã tắt đồng bộ trên máy này. Dữ liệu trong máy vẫn giữ nguyên.'; render();
+  }
+  else if (act === 'pairshow') { S.pairShow = !S.pairShow; render(); }
   else if (act === 'ck') { S.ck = b.dataset.k; render(); }
   else if (act === 'cadd') { const k = S.ck || 'chi'; S.cpanel = { id: null, k, name: '', icon: ICON_SET[0], color: COLOR_SET[0] }; S.cErr = ''; render(); const c = $('#cats'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   else if (act === 'cedit') { const c = CAT_LIST.find((x) => x.id === b.dataset.id); if (c) { S.cpanel = { ...c }; S.cErr = ''; render(); } }
@@ -1106,6 +1261,17 @@ document.addEventListener('submit', async (ev) => {
   const f = ev.target;
   if (f.id === 'budgetForm') { ev.preventDefault(); return saveBudget(); }
   if (f.id === 'catForm') { ev.preventDefault(); return saveCat(); }
+  if (f.id === 'syncForm') {
+    ev.preventDefault();
+    const tok = (($('#syncTok') || {}).value || '').trim();
+    if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(tok)) { S.panelErr = 'Mã truy cập không đúng dạng. Dán nguyên mã bắt đầu bằng github_pat_.'; return render(); }
+    S.busy = true; S.panelErr = ''; render();
+    const prev = jget('gc.sync', null);
+    jset('gc.sync', { token: tok });
+    try { await syncNow(); S.panel = ''; S.panelMsg = 'Đã bật đồng bộ. Giờ bấm "Kết nối máy khác" để lấy mã QR cho điện thoại.'; }
+    catch (e) { jset('gc.sync', prev); S.panelErr = e.message || 'Không kết nối được GitHub.'; }
+    S.busy = false; return render();
+  }
   if (f.id === 'profForm') {
     ev.preventDefault();
     const prof = { name: (($('#pName') || {}).value || '').trim().slice(0, 30), avatar: safeImg(S.profDraft && S.profDraft.avatar) };
@@ -1170,6 +1336,20 @@ document.addEventListener('submit', async (ev) => {
     else if (!S.gateErr) { noteFail(); await sleep(800); S.gateErr = failMsg('Mã khôi phục chưa đúng. Kiểm tra lại từng ký tự.'); }
     if (ok) S.panelMsg = `Đã đặt mật khẩu mới. Tên đăng nhập của bạn: ${vault.user || ''}`;
     render();
+  } else if (kind === 'gsync') {
+    const tok = (($('#syncTok') || {}).value || '').trim();
+    if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(tok)) { S.gateErr = 'Mã truy cập không đúng dạng. Dán nguyên mã bắt đầu bằng github_pat_.'; return render(); }
+    S.busy = true; render();
+    const prev = jget('gc.sync', null);
+    jset('gc.sync', { token: tok });
+    try {
+      const r = await pullRemote();
+      if (!r.data || !r.data.items || !r.data.items['so/vault']) throw new Error('Kho đồng bộ chưa có sổ nào. Hãy bật đồng bộ trên máy đang có sổ trước.');
+      await syncNow();
+      S.busy = false; S.gateNote = 'Đã tải sổ về máy này. Đăng nhập bằng tài khoản bạn đã tạo.';
+      return boot();
+    } catch (e) { jset('gc.sync', prev); S.gateErr = e.message || 'Không kết nối được.'; }
+    S.busy = false; render();
   } else if (kind === 'wipe') {
     if (p1.trim().toUpperCase() !== 'XOA') { S.gateErr = 'Gõ đúng chữ XOA để xác nhận.'; return render(); }
     S.busy = true; render();
@@ -1182,8 +1362,13 @@ document.addEventListener('submit', async (ev) => {
 let hiddenAt = 0, lastAct = Date.now();
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
-  else if (S.gate === 'app' && !S.demo && hiddenAt && Date.now() - hiddenAt > 3 * 60 * 1000) lock();
+  else {
+    if (S.gate === 'app' && !S.demo && hiddenAt && Date.now() - hiddenAt > 3 * 60 * 1000) lock();
+    if (syncToken() && db) syncNow().catch(() => {});
+  }
 });
+// Kéo thay đổi từ máy khác mỗi phút khi đang mở trang
+setInterval(() => { if (syncToken() && db && !document.hidden) syncNow().catch(() => {}); }, 60000);
 for (const ev of ['pointerdown', 'keydown', 'scroll', 'touchstart']) addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true });
 setInterval(() => { if (S.gate === 'app' && !S.demo && Date.now() - lastAct > 10 * 60 * 1000) lock(); }, 30000);
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (S.gate === 'app') render(); }, 150); });

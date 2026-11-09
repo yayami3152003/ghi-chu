@@ -1,8 +1,8 @@
 // Cho trang mở được khi mất mạng. Luôn lấy bản mới trước, mất mạng mới dùng bản đã lưu.
 // Không đụng tới dữ liệu thu chi (dữ liệu nằm trong localStorage của trình duyệt, đã mã hóa).
-const CACHE = 'ghi-chu-v4';
+const CACHE = 'ghi-chu-v5';
 const FONTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
-const FILES = ['./', './index.html', './app.js', './vendor/lordicon.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
+const FILES = ['./', './index.html', './app.js', './vendor/lordicon.js', './vendor/qrcode.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
