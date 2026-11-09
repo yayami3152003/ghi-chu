@@ -613,7 +613,7 @@ function renderGate() {
   if (g === 'offline') return gateShell(`<h1>Chưa kết nối được</h1><p>Không đọc được sổ lúc này. Kiểm tra mạng rồi thử lại.</p><button class="btn primary" data-act="retry">Thử lại</button>`);
   if (g === 'setup') return gateShell(`
     <h1>Tạo tài khoản</h1>
-    <p>Sổ chỉ lưu trong máy này và được mã hóa bằng mật khẩu của bạn. Không ai khác đọc được.</p>
+    <p>${S.gateNote ? `<b>${esc(S.gateNote)}</b>` : 'Sổ được mã hóa bằng mật khẩu của bạn. Không ai khác đọc được.'}</p>
     <form id="gateForm" data-kind="setup">
       <label class="field">Mã kích hoạt<input id="actIn" class="code-in" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="24" placeholder="XXXXX-XXXXX-XXXXX"></label>
       <label class="field">Tên đăng nhập<input id="uname" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40"></label>
@@ -1344,7 +1344,12 @@ document.addEventListener('submit', async (ev) => {
     jset('gc.sync', { token: tok });
     try {
       const r = await pullRemote();
-      if (!r.data || !r.data.items || !r.data.items['so/vault']) throw new Error('Kho đồng bộ chưa có sổ nào. Hãy bật đồng bộ trên máy đang có sổ trước.');
+      if (!r.data || !r.data.items || !r.data.items['so/vault']) {
+        // Mã đúng nhưng kho còn trống: giữ mã, cho tạo tài khoản ngay; tạo xong sổ tự đẩy lên kho
+        S.busy = false; S.gate = 'setup'; S.gateErr = '';
+        S.gateNote = 'Mã đồng bộ hợp lệ nhưng kho chưa có sổ nào. Tạo tài khoản ở đây, sổ sẽ tự lưu lên kho để các máy khác quét mã vào được.';
+        setSync('ok'); return render();
+      }
       await syncNow();
       S.busy = false; S.gateNote = 'Đã tải sổ về máy này. Đăng nhập bằng tài khoản bạn đã tạo.';
       return boot();
