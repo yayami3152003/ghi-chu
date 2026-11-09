@@ -26,13 +26,32 @@ const CAT_HEX = {
   caulong: '#b4de6a', hoctap: '#8aa2fa', giadinh: '#ea9a62', khac: '#9db2ad', luong: '#63e4a4', thuong: '#6fddb0', banhang: '#93d477',
   dautu: '#4fd1c0', duoccho: '#a6d47a', khacthu: '#9db2ad',
 };
+// Tất cả icon có sẵn (đã lưu trong thư mục icons/) để chọn cho danh mục tự tạo
+const ICON_SET = [...new Set(Object.values(LI_KEY))];
+const COLOR_SET = ['#f4a259', '#62b6f0', '#e987b8', '#e8c65a', '#a699f5', '#f47c6c', '#4fd6d0', '#b4de6a', '#8aa2fa', '#ea9a62', '#63e4a4', '#9db2ad'];
 function li(name, { size = 24, trigger = 'hover', target = '', primary = '#e7f3f1', secondary = '#36d6c4', delay = 0 } = {}) {
-  return `<lord-icon src="icons/${LI_KEY[name] || LI_KEY.khac}.json" trigger="${trigger}"${target ? ` target="${target}"` : ''}${delay ? ` delay="${delay}"` : ''} colors="primary:${primary},secondary:${secondary}" style="width:${size}px;height:${size}px"></lord-icon>`;
+  const key = LI_KEY[name] || (ICON_SET.includes(name) ? name : LI_KEY.khac);
+  return `<lord-icon src="icons/${key}.json" trigger="${trigger}"${target ? ` target="${target}"` : ''}${delay ? ` delay="${delay}"` : ''} colors="primary:${primary},secondary:${secondary}" style="width:${size}px;height:${size}px"></lord-icon>`;
 }
+// Danh mục mặc định; người dùng thêm/sửa/xóa được (lưu mã hóa ở so/vault/cfg/cats)
+const DEFAULT_CATS = [
+  ...CATS.chi.map(([id, name]) => ({ id, k: 'chi', name, icon: LI_KEY[id], color: CAT_HEX[id] })),
+  ...CATS.thu.map(([id, name]) => ({ id, k: 'thu', name, icon: LI_KEY[id], color: CAT_HEX[id] })),
+];
+const CAT_ICON = {};
+let CAT_LIST = DEFAULT_CATS;
+function applyCats(list) {
+  CAT_LIST = Array.isArray(list) && list.length ? list : DEFAULT_CATS;
+  for (const k of Object.keys(CAT_NAME)) delete CAT_NAME[k];
+  for (const c of CAT_LIST) { CAT_NAME[c.id] = c.name; CAT_HEX[c.id] = c.color || '#9db2ad'; CAT_ICON[c.id] = c.icon || LI_KEY.khac; }
+  CATS.chi = CAT_LIST.filter((c) => c.k === 'chi' && !c.del).map((c) => [c.id, c.name]);
+  CATS.thu = CAT_LIST.filter((c) => c.k === 'thu' && !c.del).map((c) => [c.id, c.name]);
+}
+applyCats(DEFAULT_CATS);
 // Icon danh mục: tự chạy khi rê chuột vào cả hàng chứa nó
-const catIcon = (c, size = 24, target = 'button') => li(c, { size, target, secondary: CAT_HEX[c] || '#9db2ad' });
+const catIcon = (c, size = 24, target = 'button') => li(CAT_ICON[c] || c, { size, target, secondary: CAT_HEX[c] || '#9db2ad' });
 const ICON = new Proxy({}, { get: (_, c) => catIcon(String(c)) });
-const ccVar = (id) => `var(--c-${id === 'khacthu' ? 'khac' : id})`;
+const ccVar = (id) => CAT_HEX[id] || '#9db2ad';
 const UI = {
   prev: P('<path d="M15 5l-7 7 7 7"/>'),
   next: P('<path d="M9 5l7 7-7 7"/>'),
@@ -152,7 +171,7 @@ const S = {
   view: 'week', anchor: today(), bk: 'chi',
 };
 try { const v = localStorage.getItem('stc.view'); if (['day', 'week', 'month'].includes(v)) S.view = v; } catch {}
-let db = null, vaultRef = null, txCol = null, bgCol = null, vault = null, unsub = null, unsubBg = null, loadTimer = null;
+let db = null, vaultRef = null, txCol = null, bgCol = null, cfgCol = null, vault = null, unsub = null, unsubBg = null, unsubCfg = null, loadTimer = null;
 
 // ---------- lưu ngay trong máy (localStorage), không gửi đi đâu ----------
 const PFX = 'gc1:';
@@ -286,6 +305,7 @@ async function boot() {
   vaultRef = db.doc('so/vault');
   txCol = vaultRef.collection('tx');
   bgCol = vaultRef.collection('bg');
+  cfgCol = vaultRef.collection('cfg');
   const snap = await vaultRef.get();
   vault = snap.exists ? snap.data() : null;
   S.gate = vault ? 'unlock' : 'setup';
@@ -348,7 +368,7 @@ async function changePin(newPin) {
   vault = { ...vault, ...upd };
 }
 function enterApp(key, raw) {
-  S.gateNote = ''; S.bpanel = null; S.bErr = '';
+  S.gateNote = ''; S.bpanel = null; S.bErr = ''; S.profile = {}; S.cpanel = null; applyCats(null); S.welcome = true;
   S.key = key; S.raw = raw || null; S.demo = false; S.panel = ''; S.shownCode = ''; S.tx = new Map(); S.loading = true; S.stale = false; S.loadErr = '';
   S.gate = 'app';
   const gen = ++S.gen;
@@ -386,13 +406,37 @@ function enterApp(key, raw) {
       if (gen === S.gen) render();
     });
   });
+  // Cài đặt mã hóa: danh mục tự chỉnh + hồ sơ (tên hiển thị, ảnh đại diện)
+  let cchain = Promise.resolve();
+  unsubCfg = cfgCol.onSnapshot((snap) => {
+    const changes = snap.docChanges();
+    cchain = cchain.then(async () => {
+      for (const ch of changes) {
+        if (gen !== S.gen) return;
+        const id = ch.doc.id;
+        if (ch.type === 'removed') { if (id === 'cats') applyCats(null); if (id === 'profile') S.profile = {}; continue; }
+        try {
+          const v = await unseal(key, ch.doc.data());
+          if (gen !== S.gen) return;
+          if (id === 'cats') applyCats(v.list);
+          if (id === 'profile') S.profile = v;
+        } catch {}
+      }
+      if (gen === S.gen) render();
+    });
+  });
   render();
+}
+async function saveCfg(id, obj) {
+  if (S.demo) return;
+  await cfgCol.doc(id).set(await seal(S.key, obj));
 }
 function lock() {
   S.gen++;
   if (unsub) { unsub(); unsub = null; }
   if (unsubBg) { unsubBg(); unsubBg = null; }
-  S.bg = new Map(); S.bpanel = null;
+  if (unsubCfg) { unsubCfg(); unsubCfg = null; }
+  S.bg = new Map(); S.bpanel = null; S.profile = {}; S.cpanel = null; S.profDraft = null; applyCats(null);
   clearTimeout(loadTimer);
   S.key = null; S.raw = null; S.pending = null; S.recCode = ''; S.panel = ''; S.shownCode = ''; S.tx = new Map(); closeSheet();
   if (S.demo) { S.demo = false; return boot(); }
@@ -400,7 +444,7 @@ function lock() {
   render();
 }
 async function wipe() {
-  for (const c of [txCol, bgCol]) {
+  for (const c of [txCol, bgCol, cfgCol]) {
     const all = await c.get();
     for (const d of all.docs) await c.doc(d.id).delete();
   }
@@ -427,13 +471,14 @@ function startDemo() {
     if (d.getDay() === 0) add(d, 'chi', 200000 + rnd() * 300000, 'giadinh', 'Đi chợ cuối tuần');
   }
   S.bg = new Map(DEFAULT_BUDGETS.map((b, i) => ['b' + i, { ...b, id: 'b' + i }]));
+  S.welcome = true;
   S.demo = true; S.key = null; S.tx = tx; S.loading = false; S.stale = false; S.loadErr = ''; S.gate = 'app';
   render();
 }
 
 // ---------- vẽ ----------
 const app = $('#app');
-function render() { S.gate === 'app' ? renderApp() : renderGate(); }
+function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } }
 
 function gateShell(inner) {
   app.innerHTML = `<div class="gate"><div class="gate-card"><div class="logo">${li('coins', { size: 34, trigger: 'loop', delay: 2500, primary: '#04201d', secondary: '#04201d' })}</div>${inner}</div></div>`;
@@ -623,7 +668,7 @@ function renderApp() {
   }
 
   const alerts = remindLines(today()).length;
-  const name = S.demo ? 'bạn' : (vault && vault.user) || 'bạn';
+  const name = S.demo ? 'bạn' : (S.profile && S.profile.name) || (vault && vault.user) || 'bạn';
   app.innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Menu">
       <div class="logo">${li('coins', { size: 30, trigger: 'loop', delay: 3000, primary: '#04201d', secondary: '#04201d' })}</div>
@@ -636,7 +681,7 @@ function renderApp() {
         <div class="top-actions">
           <button class="round" data-act="go" data-t="budgets" aria-label="Nhắc nhở hạn mức">${li('bell', { size: 24, target: 'button', secondary: alerts ? '#ff8b7b' : '#36d6c4' })}${alerts ? `<span class="badge">${alerts}</span>` : ''}</button>
           <button class="round" data-act="lock" aria-label="${S.demo ? 'Thoát xem thử' : 'Đăng xuất'}" title="${S.demo ? 'Thoát xem thử' : 'Đăng xuất'}">${li('exit', { size: 24, target: 'button' })}</button>
-          <span class="avatar" aria-hidden="true">${esc(name[0] || 'S')}</span>
+          <button class="avatar shine" data-act="profile" aria-label="Hồ sơ: đổi tên, ảnh đại diện" title="Hồ sơ">${avatarInner(S.profile, name)}</button>
         </div>
       </header>
       ${S.demo ? `<div class="demo-bar"><b>Dữ liệu mẫu.</b> Không lưu lại, chỉ để xem thử cách dùng.</div>` : ''}
@@ -652,6 +697,7 @@ function renderApp() {
         <div class="col">
           <div class="hero-row">
             <section class="hero" aria-label="Tổng kết">
+              <span class="sheen" aria-hidden="true"></span>
               <div class="hero-art">${li('coins', { size: 104, trigger: 'loop', delay: 1800, primary: '#e7f3f1', secondary: '#3be0cb' })}</div>
               <span class="pill">${li('calendar', { size: 16, trigger: 'loop', delay: 4000, primary: '#0c2a2b', secondary: '#1c9db7' })}${esc(h2)}</span>
               <div class="hero-label">Còn lại ${WORD[S.view]}</div>
@@ -666,12 +712,14 @@ function renderApp() {
         </div>
         <div class="col">
           ${stats}
+          ${catsCard()}
           ${S.demo ? '' : securityCard()}
         </div>
       </div>
       <p class="credit">Icon động: <a href="https://lordicon.com/" target="_blank" rel="noopener">Lordicon.com</a></p>
     </main>
   </div>`;
+  syncWelcome(name);
 }
 
 // ---------- hạn mức chi tiêu + nhắc nhở ----------
@@ -738,6 +786,111 @@ function showToast(msg, level) {
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 5000);
 }
 
+// ---------- lời chào mỗi lần vào sổ ----------
+function welcomeHTML(name) {
+  const tk = ymd(today());
+  const chiToday = [...S.tx.values()].reduce((x, t) => x + (t.k === 'chi' && t.d === tk ? t.a : 0), 0);
+  const warn = remindLines(today());
+  const line = chiToday
+    ? `Hôm nay bạn đã chi <b>${money(chiToday)}</b>.`
+    : 'Hôm nay bạn chưa chi đồng nào. Giữ vững nhé!';
+  const extra = warn.length
+    ? `<p class="w-warn">${li('bell', { size: 20, trigger: 'loop', delay: 1500, secondary: '#f2c46b' })}${warn.length} hạn mức đang sắp chạm hoặc đã vượt.</p>`
+    : '';
+  return `<div class="welcome-scrim" data-act="wclose"><div class="welcome shine-box" role="dialog" aria-modal="true" aria-labelledby="wTitle" data-stop="1">
+    <span class="sheen" aria-hidden="true"></span>
+    <span class="avatar big">${avatarInner(S.profile, name)}</span>
+    <h2 id="wTitle">${esc(name)} ơi, hôm nay đã tiết kiệm chưa?</h2>
+    <p>${line}</p>${extra}
+    <div class="actions" style="width:100%"><button class="btn ghost" data-act="wclose">Vào sổ</button><button class="btn primary" data-act="wadd">${li('plus', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Ghi khoản</button></div>
+  </div></div>`;
+}
+
+// Giữ khung chào cố định, chỉ cập nhật nội dung để hiệu ứng mở không chạy lại mỗi lần vẽ lại
+function syncWelcome(name) {
+  const host = $('#welcomeHost');
+  if (!host) return;
+  if (!S.welcome || S.gate !== 'app') { host.innerHTML = ''; return; }
+  const tmp = document.createElement('div'); tmp.innerHTML = welcomeHTML(name);
+  const cur = host.querySelector('.welcome'), nw = tmp.querySelector('.welcome');
+  if (!cur) { host.replaceChildren(tmp.firstElementChild); host.dataset.sig = nw.textContent; return; }
+  if (host.dataset.sig !== nw.textContent || !!cur.querySelector('img') !== !!nw.querySelector('img')) { cur.innerHTML = nw.innerHTML; host.dataset.sig = nw.textContent; }
+}
+
+// ---------- quản lý danh mục ----------
+function catsCard() {
+  if (S.cpanel) return `<section class="card" id="cats"><div class="card-head"><h3>${S.cpanel.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3></div>${catForm()}</section>`;
+  const k = S.ck || 'chi';
+  const list = CAT_LIST.filter((c) => c.k === k && !c.del);
+  return `<section class="card" id="cats"><div class="card-head"><h3>Danh mục</h3>
+    <div class="mini-seg"><button data-act="ck" data-k="chi" aria-pressed="${k === 'chi'}">Chi</button><button data-act="ck" data-k="thu" aria-pressed="${k === 'thu'}">Thu</button></div></div>
+    <div class="chip-grid">${list.map((c) => `<button class="cat-chip" data-act="cedit" data-id="${esc(c.id)}" style="--cc:${esc(c.color)}"><span class="ci">${catIcon(c.id, 22, '.cat-chip')}</span><span>${esc(c.name)}</span></button>`).join('')}
+      <button class="cat-chip add" data-act="cadd"><span class="ci" style="--cc:#36d6c4">${li('plus', { size: 22, target: '.cat-chip' })}</span><span>Thêm</span></button></div>
+    <p class="pct" style="text-align:left">Chạm vào một danh mục để đổi tên, icon, màu hoặc xóa.</p></section>`;
+}
+function catForm() {
+  const p = S.cpanel;
+  return `<form id="catForm" class="stack" novalidate>
+    <label class="field">Tên danh mục<input id="cName" maxlength="24" value="${esc(p.name || '')}" placeholder="VD: Cà phê"></label>
+    ${p.id ? '' : `<div class="field">Loại<div class="mini-seg" style="align-self:flex-start"><button type="button" data-act="ckind" data-k="chi" aria-pressed="${p.k === 'chi'}">Khoản chi</button><button type="button" data-act="ckind" data-k="thu" aria-pressed="${p.k === 'thu'}">Khoản thu</button></div></div>`}
+    <div class="field">Icon<div class="icon-grid">${ICON_SET.map((key) => `<button type="button" data-act="cicon" data-v="${key}" aria-pressed="${p.icon === key}" aria-label="Chọn icon">${li(key, { size: 26, target: 'button', secondary: p.color })}</button>`).join('')}</div></div>
+    <div class="field">Màu<div class="swatches">${COLOR_SET.map((c) => `<button type="button" data-act="ccolor" data-v="${c}" aria-pressed="${p.color === c}" style="background:${c}" aria-label="Chọn màu"></button>`).join('')}</div></div>
+    ${S.cErr ? `<p class="err">${esc(S.cErr)}</p>` : ''}
+    <div class="actions">${p.id ? `<button type="button" class="btn ghost danger${p.armed ? ' armed' : ''}" data-act="cdel">${p.armed ? 'Bấm lần nữa để xóa' : 'Xóa'}</button>` : ''}<button type="button" class="btn ghost" data-act="ccancel">Hủy</button><button type="submit" class="btn primary">Lưu danh mục</button></div>
+    ${p.id ? '<p class="pct" style="text-align:left">Xóa danh mục không xóa các khoản đã ghi, chúng vẫn hiện tên cũ.</p>' : ''}
+  </form>`;
+}
+async function writeCats(list) {
+  await saveCfg('cats', { list });
+  applyCats(list); S.cpanel = null; S.cErr = ''; render();
+}
+async function saveCat() {
+  const p = S.cpanel;
+  p.name = (($('#cName') || {}).value || '').trim();
+  if (!p.name) { S.cErr = 'Nhập tên danh mục.'; return render(); }
+  if (CAT_LIST.some((c) => !c.del && c.k === p.k && c.id !== p.id && c.name.toLowerCase() === p.name.toLowerCase())) { S.cErr = 'Đã có danh mục tên này.'; return render(); }
+  const list = CAT_LIST.map((c) => ({ ...c }));
+  if (p.id) Object.assign(list.find((x) => x.id === p.id), { name: p.name, icon: p.icon, color: p.color });
+  else list.push({ id: 'c' + Date.now().toString(36), k: p.k, name: p.name, icon: p.icon, color: p.color });
+  try { await writeCats(list); } catch (e) { S.cErr = errText(e); render(); }
+}
+async function deleteCat() {
+  const p = S.cpanel;
+  if (CAT_LIST.filter((c) => c.k === p.k && !c.del).length <= 1) { S.cErr = 'Phải giữ lại ít nhất một danh mục.'; return render(); }
+  const list = CAT_LIST.map((c) => (c.id === p.id ? { ...c, del: true } : { ...c }));
+  try { await writeCats(list); } catch (e) { S.cErr = errText(e); render(); }
+}
+
+// ---------- hồ sơ: tên hiển thị + ảnh đại diện ----------
+const safeImg = (s) => (typeof s === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s) ? s : '');
+function avatarInner(p, fallback) {
+  const src = safeImg(p && p.avatar);
+  return src ? `<img src="${src}" alt="">` : esc(((p && p.name) || fallback || 'S').trim()[0] || 'S');
+}
+async function shrinkImage(file) {
+  if (!/^image\//.test(file.type)) throw new Error('Chọn một file ảnh (JPG, PNG…).');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const s = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas');
+    c.width = c.height = 192;
+    c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, 192, 192);
+    return c.toDataURL('image/jpeg', 0.85);
+  } finally { URL.revokeObjectURL(url); }
+}
+function profilePanel() {
+  const d = S.profDraft || {};
+  return `<div class="prof"><span class="avatar big">${avatarInner(d, vault && vault.user)}</span>
+      <div class="actions"><label class="btn ghost" for="avatarFile">Chọn ảnh</label>${d.avatar ? '<button class="btn ghost" data-act="avdel">Bỏ ảnh</button>' : ''}</div></div>
+    <input type="file" id="avatarFile" accept="image/*" hidden>
+    <form id="profForm" class="stack" novalidate>
+      <label class="field">Tên hiển thị<input id="pName" maxlength="30" value="${esc(d.name || '')}" placeholder="${esc(vault && vault.user || '')}"></label>
+      ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
+      <div class="actions"><button type="button" class="btn ghost" data-act="panel" data-p="">Hủy</button><button type="submit" class="btn primary">Lưu hồ sơ</button></div>
+    </form>
+    <p class="pct" style="text-align:left">Ảnh được thu nhỏ, mã hóa và chỉ lưu trong máy này. Tên đăng nhập vẫn là <b>${esc(vault && vault.user || '')}</b>.</p>`;
+}
+
 function securityCard() {
   let body;
   if (S.panel === 'pin') body = `
@@ -757,6 +910,7 @@ function securityCard() {
     ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
     <div class="actions"><button class="btn ghost" data-act="panel" data-p="">Hủy</button><label class="btn primary" for="importFile">Chọn file sao lưu</label></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>`;
+  else if (S.panel === 'profile') body = profilePanel();
   else if (S.panel === 'snaps') body = `
     <p class="pct" style="text-align:left">Bản tự lưu trong máy, mỗi ngày một bản, giữ ${SNAP_KEEP} ngày. Khôi phục sẽ đưa sổ về đúng lúc đó (các khoản ghi sau đó sẽ mất), rồi đăng nhập lại.</p>
     ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
@@ -770,13 +924,14 @@ function securityCard() {
     <p class="pct" style="text-align:left">Tên đăng nhập: <b>${esc(vault && vault.user || '')}</b>. Dữ liệu chỉ nằm trong máy này, đã mã hóa.</p>
     <p class="pct" style="text-align:left"><b>Tự động sao lưu:</b> mỗi lần thay đổi, trang tự giữ bản sao trong máy (${SNAP_KEEP} ngày). Quá 7 ngày chưa có file sao lưu thì lúc đăng nhập trang tự tải file về. File sao lưu gần nhất: ${lb ? (days === 0 ? 'hôm nay' : days + ' ngày trước') : '<b>chưa có</b>'}. Hãy cất file lên Drive riêng để phòng mất máy.</p>
     <div class="grid2">
+      <button class="btn ghost" data-act="profile">Đổi tên, ảnh đại diện</button>
       <button class="btn ghost" data-act="backup">Sao lưu ra file ngay</button>
       <button class="btn ghost" data-act="snaps">Bản tự lưu (${SNAP_KEEP} ngày)</button>
       <button class="btn ghost" data-act="panel" data-p="import">Nhập file sao lưu</button>
       ${vault && vault.v === 2 && S.raw ? `<button class="btn ghost" data-act="panel" data-p="pin">Đổi mật khẩu</button><button class="btn ghost" data-act="showcode">Xem mã khôi phục</button>` : ''}
     </div>`;
   }
-  return `<section class="card" id="security"><div class="card-head"><h3>Bảo mật & sao lưu</h3><p>Tự khóa khi rời trang 3 phút hoặc để yên 10 phút</p></div>${body}</section>`;
+  return `<section class="card" id="security"><div class="card-head"><h3>${S.panel === 'profile' ? 'Hồ sơ' : 'Tài khoản & sao lưu'}</h3><p>Tự khóa khi rời trang 3 phút hoặc để yên 10 phút</p></div>${body}</section>`;
 }
 
 // ---------- form thêm / sửa ----------
@@ -792,7 +947,7 @@ function paintForm() {
   fSave.textContent = F.id ? 'Lưu thay đổi' : F.k === 'chi' ? 'Lưu khoản chi' : 'Lưu khoản thu';
 }
 function openSheet(tx) {
-  F.id = tx ? tx.id : null; F.k = tx ? tx.k : 'chi'; F.cat = tx ? tx.cat : 'an'; F.ts = tx ? tx.ts : 0;
+  F.id = tx ? tx.id : null; F.k = tx ? tx.k : 'chi'; F.cat = tx ? tx.cat : (CATS.chi[0] || ['khac'])[0]; F.ts = tx ? tx.ts : 0;
   setAmt(tx ? tx.a : 0); fNote.value = tx ? tx.note || '' : '';
   fDate.value = tx ? tx.d : ymd(S.view === 'day' ? S.anchor : today());
   $('#sheetTitle').textContent = tx ? 'Sửa khoản' : 'Thêm khoản';
@@ -850,7 +1005,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'add') openSheet(null);
   else if (act === 'edit') { const tx = S.tx.get(b.dataset.id); if (tx) openSheet(tx); }
   else if (act === 'close') closeSheet();
-  else if (act === 'kind') { F.k = b.dataset.k; F.cat = CATS[F.k][0][0]; paintForm(); }
+  else if (act === 'kind') { F.k = b.dataset.k; F.cat = (CATS[F.k][0] || ['khac'])[0]; paintForm(); }
   else if (act === 'cat') { F.cat = b.dataset.c; paintForm(); }
   else if (act === 'q') {
     const v = b.dataset.v, cur = getAmt();
@@ -867,6 +1022,27 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'demo') startDemo();
   else if (act === 'retry') boot();
   else if (act === 'forgot') { S.gate = 'forgot'; S.gateErr = ''; render(); }
+  else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
+  else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
+  else if (act === 'ck') { S.ck = b.dataset.k; render(); }
+  else if (act === 'cadd') { const k = S.ck || 'chi'; S.cpanel = { id: null, k, name: '', icon: ICON_SET[0], color: COLOR_SET[0] }; S.cErr = ''; render(); const c = $('#cats'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  else if (act === 'cedit') { const c = CAT_LIST.find((x) => x.id === b.dataset.id); if (c) { S.cpanel = { ...c }; S.cErr = ''; render(); } }
+  else if (['ckind', 'cicon', 'ccolor'].includes(act)) {
+    S.cpanel.name = (($('#cName') || {}).value || S.cpanel.name || '');
+    if (act === 'ckind') S.cpanel.k = b.dataset.k; else if (act === 'cicon') S.cpanel.icon = b.dataset.v; else S.cpanel.color = b.dataset.v;
+    S.cpanel.armed = false; render();
+  }
+  else if (act === 'ccancel') { S.cpanel = null; S.cErr = ''; render(); }
+  else if (act === 'cdel') {
+    if (!S.cpanel.armed) { S.cpanel.name = (($('#cName') || {}).value || S.cpanel.name); S.cpanel.armed = true; return render(); }
+    await deleteCat();
+  }
+  else if (act === 'profile') {
+    if (S.demo) return;
+    S.profDraft = { ...(S.profile || {}) }; S.panel = 'profile'; S.panelErr = ''; S.panelMsg = ''; S.nav = 'security'; render();
+    const el = $('#security'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  else if (act === 'avdel') { S.profDraft.name = ($('#pName') || {}).value || ''; S.profDraft.avatar = ''; render(); }
   else if (act === 'snaps') { S.snaps = await listSnaps(); S.snapArm = ''; S.panel = 'snaps'; S.panelErr = ''; render(); }
   else if (act === 'snaprestore') {
     const day = b.dataset.day;
@@ -882,7 +1058,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'badd') {
     const used = new Set(budgetsSorted().filter((x) => x.per === 'month').map((x) => x.cat));
     const free = CATS.chi.find(([id]) => !used.has(id));
-    S.bpanel = { id: null, cat: free ? free[0] : 'an', amt: 0, per: 'month' }; S.bErr = ''; render();
+    S.bpanel = { id: null, cat: free ? free[0] : (CATS.chi[0] || ['khac'])[0], amt: 0, per: 'month' }; S.bErr = ''; render();
     const c = $('#budgets'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
   else if (act === 'bedit') { const x = S.bg.get(b.dataset.id); if (x) { S.bpanel = { ...x }; S.bErr = ''; render(); } }
@@ -929,6 +1105,14 @@ document.addEventListener('keydown', (ev) => {
 document.addEventListener('submit', async (ev) => {
   const f = ev.target;
   if (f.id === 'budgetForm') { ev.preventDefault(); return saveBudget(); }
+  if (f.id === 'catForm') { ev.preventDefault(); return saveCat(); }
+  if (f.id === 'profForm') {
+    ev.preventDefault();
+    const prof = { name: (($('#pName') || {}).value || '').trim().slice(0, 30), avatar: safeImg(S.profDraft && S.profDraft.avatar) };
+    try { await saveCfg('profile', prof); S.profile = prof; S.panel = ''; S.panelMsg = 'Đã lưu hồ sơ.'; S.profDraft = null; }
+    catch (e) { S.panelErr = errText(e); }
+    return render();
+  }
   if (f.id === 'panelForm') {
     ev.preventDefault();
     const a = $('#np1').value, c = $('#np2').value;
@@ -1005,6 +1189,11 @@ setInterval(() => { if (S.gate === 'app' && !S.demo && Date.now() - lastAct > 10
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (S.gate === 'app') render(); }, 150); });
 
 document.addEventListener('change', async (ev) => {
+  if (ev.target.id === 'avatarFile' && ev.target.files[0]) {
+    try { S.profDraft.name = ($('#pName') || {}).value || ''; S.profDraft.avatar = await shrinkImage(ev.target.files[0]); S.panelErr = ''; }
+    catch (e) { S.panelErr = e.message || 'Không đọc được ảnh này.'; }
+    return render();
+  }
   if (ev.target.id !== 'importFile' || !ev.target.files[0]) return;
   try { await importBackup(ev.target.files[0]); await afterImport(); }
   catch (e) {
