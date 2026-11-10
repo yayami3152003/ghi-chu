@@ -1233,7 +1233,7 @@ function debtForm() {
       <div class="cat-top"><span>Đã trả</span><b>${money(paid)} / ${money(p.amt || 0)}</b></div>
       ${(p.pays || []).map((x, i) => `<div class="pay-row"><span>${dm(parse(x.d))}/${parse(x.d).getFullYear()}${x.w ? ` · ${esc(walletName(x.w))}` : ''}</span><b>${money(x.a)}</b><button type="button" class="icon-btn" data-act="dpaydel" data-i="${i}" aria-label="Xóa lần trả này">×</button></div>`).join('')}
       ${p.done ? '' : `<div class="pay-add"><input id="pAmt" inputmode="numeric" placeholder="Số tiền trả" aria-label="Số tiền trả lần này"><input id="pDate" type="date" value="${ymd(today())}" aria-label="Ngày trả"></div>
-      <div class="field">${p.k === 'cho' ? 'Tiền trả nhận vào' : 'Trả bằng'}${debtWalletChips(p.pw !== undefined ? p.pw : (p.w || ''), 'dpw', true)}</div>
+      <div class="field">${p.k === 'cho' ? 'Tiền trả nhận vào' : 'Trả bằng'}${debtWalletChips(p.pw !== undefined ? p.pw : null, 'dpw', true)}</div>
       <button type="button" class="btn primary" data-act="dpay">Ghi nhận trả</button>`}
       <button type="button" class="btn ghost" data-act="ddone">${p.done ? 'Mở lại khoản này' : 'Đánh dấu đã trả hết'}</button>
     </div>` : ''}
@@ -1244,7 +1244,7 @@ function debtForm() {
 // Chọn ví cho khoản nợ / lần trả; '' = không tính vào ví nào
 function debtWalletChips(sel, act, allowNone) {
   const ws = [...walletsActive(), ...walletsAll().filter((w) => w.del && w.id === sel)];
-  return `<div class="w-pick">${ws.map((w) => `<button type="button" class="w-chip" data-act="${act}" data-w="${esc(w.id)}" aria-pressed="${sel === w.id}" style="--cc:${esc(w.color || '#9db2ad')}">${(W_TYPES[w.type] || W_TYPES.cash)[1]}<span>${esc(w.name)}</span></button>`).join('')}${allowNone ? `<button type="button" class="w-chip" data-act="${act}" data-w="" aria-pressed="${!sel}" style="--cc:#9db2ad"><span>Không tính vào ví</span></button>` : ''}</div>`;
+  return `<div class="w-pick">${ws.map((w) => `<button type="button" class="w-chip" data-act="${act}" data-w="${esc(w.id)}" aria-pressed="${sel === w.id}" style="--cc:${esc(w.color || '#9db2ad')}">${(W_TYPES[w.type] || W_TYPES.cash)[1]}<span>${esc(w.name)}</span></button>`).join('')}${allowNone ? `<button type="button" class="w-chip" data-act="${act}" data-w="" aria-pressed="${sel === ''}" style="--cc:#9db2ad"><span>Không tính vào ví</span></button>` : ''}</div>`;
 }
 function readDebtForm() {
   const p = S.dpanel; if (!p) return;
@@ -1782,6 +1782,7 @@ document.addEventListener('click', async (ev) => {
     readDebtForm();
     const keepPay = ($('#pAmt') || {}).value || '';
     if (act === 'dw') S.dpanel.w = b.dataset.w; else S.dpanel.pw = b.dataset.w;
+    S.dErr = '';
     render();
     if (keepPay && $('#pAmt')) $('#pAmt').value = keepPay;
   }
@@ -1792,7 +1793,8 @@ document.addEventListener('click', async (ev) => {
     if (!a) { S.dErr = 'Nhập số tiền trả lần này.'; return render(); }
     const left = (S.dpanel.amt || 0) - (S.dpanel.pays || []).reduce((s, x) => s + x.a, 0);
     if (a > left) { S.dErr = `Số trả lớn hơn số còn nợ (${money(Math.max(0, left))}).`; return render(); }
-    const pw = S.dpanel.pw !== undefined ? S.dpanel.pw : (S.dpanel.w || '');
+    if (S.dpanel.pw === undefined) { S.dErr = S.dpanel.k === 'cho' ? 'Chọn ví nhận tiền trả (hoặc "Không tính vào ví").' : 'Chọn ví bạn dùng để trả (hoặc "Không tính vào ví").'; render(); if ($('#pAmt')) $('#pAmt').value = NF.format(a); return; }
+    const pw = S.dpanel.pw;
     S.dpanel.pays = [...(S.dpanel.pays || []), pw ? { a, d, w: pw } : { a, d }];
     if (a === left) S.dpanel.done = true;
     await saveDebt(true);
