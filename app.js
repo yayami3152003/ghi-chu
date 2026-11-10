@@ -1197,12 +1197,33 @@ function dueInfo(x) {
     text: days < 0 ? `Quá hạn ${-days} ngày` : days === 0 ? 'Đến hạn hôm nay' : `Còn ${days} ngày (hạn ${dm(parse(x.due))})` };
 }
 function debtAlerts() { return debtsList().map((x) => ({ x, di: dueInfo(x) })).filter((o) => o.di && o.di.level !== 'ok'); }
+const whoKey = (s) => String(s || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
 function debtsCard() {
   if (S.dpanel) return `<section class="card" id="debts"><div class="card-head">${backBtn()}<h3>${S.dpanel.id ? 'Sửa khoản nợ' : 'Thêm khoản nợ'}</h3></div>${debtForm()}</section>`;
   const k = S.dk || 'cho', all = debtsList();
   const sum = (kk) => all.filter((x) => x.k === kk && debtOpen(x)).reduce((s, x) => s + debtLeft(x), 0);
-  const ofK = all.filter((x) => x.k === k);
+  // Gộp theo người: trùng tên (không phân biệt hoa thường, dấu cách thừa) thì cộng dồn số còn nợ
+  const groups = (kk) => {
+    const m = new Map();
+    for (const x of all) {
+      if (x.k !== kk || !debtOpen(x)) continue;
+      const key = whoKey(x.who), g = m.get(key) || { key, name: (x.who || '').trim().replace(/\s+/g, ' '), left: 0, n: 0 };
+      g.left += debtLeft(x); g.n++; m.set(key, g);
+    }
+    return m;
+  };
+  const mine = groups(k), other = groups(k === 'cho' ? 'no' : 'cho');
+  const people = [...mine.values()].sort((a, b) => b.left - a.left);
+  if (S.dWho && !mine.has(S.dWho)) S.dWho = '';
+  const ofK = all.filter((x) => x.k === k && (!S.dWho || whoKey(x.who) === S.dWho));
   const doneN = ofK.filter((x) => !debtOpen(x)).length;
+  const peopleHTML = people.length ? `<div class="who-sum"><div class="ws-head"><b>Tổng theo người</b><span>${people.length} người</span></div>
+      ${people.map((g) => { const o = other.get(g.key); return `<button class="ws-row${S.dWho === g.key ? ' on' : ''}" data-act="dwho" data-key="${esc(g.key)}">
+        <span class="who-ava ${k}">${esc(g.name[0] || '?')}</span>
+        <span class="ws-main"><span class="ws-name">${esc(g.name)}</span><span class="ws-note">${g.n} khoản${o ? ` · ${k === 'cho' ? 'bạn cũng nợ người này' : 'người này cũng nợ bạn'} ${money(o.left)} → bù trừ: ${g.left >= o.left ? (k === 'cho' ? 'người này còn nợ bạn ' : 'bạn còn nợ ') + money(g.left - o.left) : (k === 'cho' ? 'bạn còn nợ ' : 'người này còn nợ bạn ') + money(o.left - g.left)}` : ''}</span></span>
+        <b class="${k === 'cho' ? 'amt-in' : 'amt-out'}">${money(g.left)}</b></button>`; }).join('')}
+    </div>` : '';
+  const filterHTML = S.dWho ? `<div class="who-filter">Đang xem khoản của <b>${esc((mine.get(S.dWho) || {}).name || '')}</b><button class="link" data-act="dwho" data-key="">Xem tất cả</button></div>` : '';
   const list = ofK.filter((x) => S.dShowDone || debtOpen(x)).sort((a, b) => (debtOpen(b) - debtOpen(a)) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : (b.ts || 0) - (a.ts || 0)));
   const rows = list.map((x) => {
     const di = dueInfo(x), paid = debtPaid(x), open = debtOpen(x);
@@ -1217,6 +1238,8 @@ function debtsCard() {
       <button data-act="dk" data-k="cho" aria-pressed="${k === 'cho'}"><span>Người khác nợ tôi</span><b class="amt-in">${money(sum('cho'))}</b></button>
       <button data-act="dk" data-k="no" aria-pressed="${k === 'no'}"><span>Tôi nợ</span><b class="amt-out">${money(sum('no'))}</b></button>
     </div>
+    ${peopleHTML}
+    ${filterHTML}
     ${rows ? `<div class="bg-list">${rows}</div>` : `<p class="pct" style="text-align:left">${k === 'cho' ? 'Chưa có ai nợ bạn.' : 'Bạn không nợ ai.'} Bấm <b>+ Thêm khoản nợ</b> để ghi.</p>`}
     ${doneN ? `<button class="link" data-act="ddonetoggle" style="align-self:flex-start">${S.dShowDone ? 'Ẩn' : 'Xem'} ${doneN} khoản đã trả xong</button>` : ''}
   </section>`;
@@ -1755,7 +1778,8 @@ document.addEventListener('click', async (ev) => {
   }
   else if (act === 'pairshow') { S.pairShow = !S.pairShow; render(); }
   else if (act === 'tokshow') { S.tokShow = !S.tokShow; render(); }
-  else if (act === 'dk') { S.dk = b.dataset.k; render(); }
+  else if (act === 'dk') { S.dk = b.dataset.k; S.dWho = ''; render(); }
+  else if (act === 'dwho') { const key = b.dataset.key; S.dWho = S.dWho === key ? '' : key; render(); if (S.dWho) { const el = $('.who-filter'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } }
   else if (act === 'fw') { F.w = b.dataset.w; paintForm(); }
   else if (act === 'walletadd') {
     const used = new Set(walletsActive().map((w) => w.color));
