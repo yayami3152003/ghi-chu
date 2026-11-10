@@ -60,6 +60,8 @@ a{color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
 .num{font-variant-numeric:tabular-nums}
 lord-icon{display:block;flex:none}
+.fb-ico{display:inline-grid;place-items:center;flex:none}
+.fb-ico svg{width:100%;height:100%;display:block}
 
 /* kính */
 .glass,.card,.hero,.gate-card,.sheet,.rail,.remind,.demo-bar,.note{backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%)}
@@ -327,6 +329,40 @@ button.avatar{border:0;padding:0;cursor:pointer}
 .pair-box.show svg{filter:none}
 .pair-cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(8,17,19,.55);color:var(--ink);font-weight:700;font-size:14px}
 .pair-box.show .pair-cover{display:none}
+
+/* thanh tab nổi trên điện thoại: viên kính chỉ có icon + nút tròn, bấm + thì nở thành bảng thao tác */
+.tabdock{display:none}
+@media (max-width:760px){
+  .rail{display:none !important}
+  .tabdock{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:25;align-items:flex-end;gap:12px;pointer-events:none;
+    padding:0 max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  .tabpill{pointer-events:auto;position:relative;flex:1;min-width:0;height:62px;border-radius:31px;overflow:hidden;
+    background:rgba(12,27,30,.84);border:1px solid var(--glass-hi);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+    box-shadow:0 18px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);
+    transition:height .5s cubic-bezier(.2,.9,.2,1),border-radius .5s cubic-bezier(.2,.9,.2,1)}
+  .tabdock.open .tabpill{height:300px;border-radius:26px}
+  .tabs{position:absolute;left:0;right:0;bottom:0;height:62px;display:flex;align-items:center;justify-content:space-around;padding:0 6px;
+    transition:opacity .25s ease,filter .35s ease,transform .35s ease}
+  .tabdock.open .tabs{opacity:0;filter:blur(8px);transform:scale(.9);pointer-events:none}
+  .tab{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:var(--muted);transition:background .25s,color .25s,box-shadow .25s}
+  .tab svg{width:23px;height:23px}
+  .tab.on{background:rgba(255,255,255,.13);color:var(--ink);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+  .dock-grid{position:absolute;inset:0;padding:16px 10px 12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 4px;align-content:start;
+    opacity:0;filter:blur(12px);transform:scale(.92);transform-origin:bottom left;pointer-events:none;
+    transition:opacity .25s ease,filter .35s ease,transform .45s cubic-bezier(.2,.9,.2,1)}
+  .tabdock.open .dock-grid{opacity:1;filter:none;transform:none;pointer-events:auto;transition-delay:.12s}
+  .dock-item{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);min-width:0;text-align:center;line-height:1.2}
+  .dock-ico{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.07);border:1px solid var(--glass-line);color:var(--ink);transition:background .2s,color .2s,transform .2s}
+  .dock-ico svg{width:24px;height:24px}
+  .dock-ico.out{color:var(--out)} .dock-ico.in{color:var(--in)}
+  .dock-item:active .dock-ico{background:#fff;color:#0c1a1d;transform:scale(.94)}
+  .dock-fab{pointer-events:auto;width:62px;height:62px;border-radius:50%;flex:none;display:grid;place-items:center;
+    background:rgba(12,27,30,.84);border:1px solid var(--glass-hi);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);color:var(--ink);
+    box-shadow:0 18px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);transition:transform .45s cubic-bezier(.2,.9,.2,1),background .25s,color .25s}
+  .dock-fab svg{width:26px;height:26px}
+  .tabdock.open .dock-fab{transform:rotate(135deg)}
+  .dock-fab:active{background:#fff;color:#0c1a1d}
+}
 
 /* nút quay lại */
 .back-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 12px 6px 8px;border-radius:999px;background:var(--glass-2);border:1px solid var(--glass-line);font-size:13px;font-weight:700;color:var(--ink);flex:none}

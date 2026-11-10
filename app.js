@@ -29,9 +29,62 @@ const CAT_HEX = {
 // Tất cả icon có sẵn (đã lưu trong thư mục icons/) để chọn cho danh mục tự tạo
 const ICON_SET = [...new Set(Object.values(LI_KEY))];
 const COLOR_SET = ['#f4a259', '#62b6f0', '#e987b8', '#e8c65a', '#a699f5', '#f47c6c', '#4fd6d0', '#b4de6a', '#8aa2fa', '#ea9a62', '#63e4a4', '#9db2ad'];
+// Icon nét tĩnh dự phòng (theo mã Lordicon): dùng khi máy không chạy được icon động
+const SVP = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const SV = {
+  njrwmskv: SVP('<path d="M7 3v8M5 3v4a2 2 0 0 0 4 0V3M7 11v10M17 3c-2.2 1-3.2 4-3.2 7.5H17V21"/>'),
+  pvoxxjof: SVP('<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-7h5l3 7M10 9l2 7h-6M14 6h3"/>'),
+  hwpohgdf: SVP('<path d="M3 4h2.5l2.2 10.5h10.6L20.5 7H6.4"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>'),
+  tcbkwnah: SVP('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"/>'),
+  pgirtdfe: SVP('<path d="M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5"/>'),
+  ipbffwpl: SVP('<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/><path d="M5.5 12h3l1.5-2 2 4 1.5-2h5"/>'),
+  zsyzaums: SVP('<circle cx="12" cy="12" r="8.5"/><path d="M10.5 9l4.5 3-4.5 3z"/>'),
+  wmqqbxlm: SVP('<circle cx="16.5" cy="17" r="3"/><path d="M14.4 14.9L6 6.5M14.4 14.9l-1.6-7.6M14.4 14.9l-7.6-1.6M6 6.5l6.8.8M6 6.5l.8 6.8"/>'),
+  lufygyut: SVP('<path d="M2.5 9L12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v4.5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3V11M21.5 9v5"/>'),
+  xvmmqwjv: SVP('<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.2a3 3 0 0 1 0 5.6M17.5 14.2A5.5 5.5 0 0 1 20.5 20"/>'),
+  lzsupfwm: SVP('<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>'),
+  ylscktzo: SVP('<path d="M3 10l9-5.5 9 5.5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20.5h18"/>'),
+  mchvarrg: SVP('<path d="M4.5 11h15v9h-15zM3 7.5h18V11H3zM12 7.5V20M12 7.5c-1.6-3.6-5.6-3-4.6-.2M12 7.5c1.6-3.6 5.6-3 4.6-.2"/>'),
+  uepnupwh: SVP('<path d="M3.5 12V4.5H11l9.5 9.5-7 7L3.5 12z"/><path d="M7.5 8.5h.01" stroke-width="2.8"/>'),
+  fcwmlcjj: SVP('<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>'),
+  ewmfucya: SVP('<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'),
+  kkdnopsh: SVP('<ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v5c0 1.7 2.7 3 6 3M3 12v5c0 1.7 2.7 3 6 3"/><ellipse cx="15" cy="13" rx="6" ry="3"/><path d="M9 13v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/>'),
+  opqmrqco: SVP('<path d="M5 11a7 6 0 0 1 12.5-3.5H20v4l-1.5 1.5V16h-2.5v2.5h-3V17h-3v1.5H7V16a6 6 0 0 1-2-5z"/><path d="M15.5 10h.01" stroke-width="2.6"/><path d="M10 6.5h3"/>'),
+  zbtbhzsg: SVP('<path d="M5 4.5h11a2 2 0 0 1 2 2V20H7a2 2 0 0 1-2-2zM5 18a2 2 0 0 1 2-2h11M9 8.5h5"/>'),
+  fvkvwmsp: SVP('<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17l3 3 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.5 2.5-2.5-.5-.5-2.5z"/>'),
+  ueoydrft: SVP('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
+  txuhvtae: SVP('<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l4-4-4-4M14 12H4"/>'),
+  ypbuyaqd: SVP('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/>'),
+  pilfbsjh: SVP('<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>'),
+  laobovmg: SVP('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9.5h16M8.5 3v4M15.5 3v4"/>'),
+  evearxpv: SVP('<path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18z"/>'),
+  pxixoqxa: SVP('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  knitbwfa: SVP('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+};
+let LI_BROKEN = false;
+try { LI_BROKEN = Number(localStorage.getItem('gc.liBroken') || 0) > Date.now(); } catch {}
 function li(name, { size = 24, trigger = 'hover', target = '', primary = '#e7f3f1', secondary = '#36d6c4', delay = 0 } = {}) {
   const key = LI_KEY[name] || (ICON_SET.includes(name) ? name : LI_KEY.khac);
-  return `<lord-icon src="icons/${key}.json" trigger="${trigger}"${target ? ` target="${target}"` : ''}${delay ? ` delay="${delay}"` : ''} colors="primary:${primary},secondary:${secondary}" style="width:${size}px;height:${size}px"></lord-icon>`;
+  const tint = secondary.toLowerCase() === '#36d6c4' ? primary : secondary;
+  if (LI_BROKEN || !window.customElements || !customElements.get('lord-icon')) return `<span class="fb-ico" style="width:${size}px;height:${size}px;color:${tint}">${SV[key] || SV.lzsupfwm}</span>`;
+  return `<lord-icon src="icons/${key}.json" data-k="${key}" data-c="${tint}" trigger="${trigger}"${target ? ` target="${target}"` : ''}${delay ? ` delay="${delay}"` : ''} colors="primary:${primary},secondary:${secondary}" style="width:${size}px;height:${size}px"></lord-icon>`;
+}
+// Sau 5 giây, icon động nào chưa vẽ được thì thay bằng icon nét tĩnh; nếu không cái nào chạy, máy này dùng icon tĩnh trong 1 ngày
+let icoT;
+function checkIcons() {
+  clearTimeout(icoT);
+  icoT = setTimeout(() => {
+    const all = [...document.querySelectorAll('lord-icon[data-k]')];
+    if (!all.length) return;
+    const bad = all.filter((el) => !(el.shadowRoot && el.shadowRoot.querySelector('svg')));
+    if (!bad.length) return;
+    if (bad.length === all.length) { LI_BROKEN = true; try { localStorage.setItem('gc.liBroken', String(Date.now() + 864e5)); } catch {} }
+    for (const el of bad) {
+      const s = document.createElement('span'); s.className = 'fb-ico';
+      s.style.cssText = `width:${el.style.width};height:${el.style.height};color:${el.dataset.c}`;
+      s.innerHTML = SV[el.dataset.k] || SV.lzsupfwm; el.replaceWith(s);
+    }
+  }, 5000);
 }
 // Danh mục mặc định; người dùng thêm/sửa/xóa được (lưu mã hóa ở so/vault/cfg/cats)
 const DEFAULT_CATS = [
@@ -560,7 +613,7 @@ async function saveCfg(id, obj) {
   await cfgCol.doc(id).set(await seal(S.key, obj));
 }
 function lock() {
-  S.gen++;
+  S.gen++; S.dock = false;
   if (unsub) { unsub(); unsub = null; }
   if (unsubBg) { unsubBg(); unsubBg = null; }
   if (unsubCfg) { unsubCfg(); unsubCfg = null; }
@@ -614,13 +667,14 @@ function startDemo() {
 
 // ---------- vẽ ----------
 const app = $('#app');
-function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } syncHistory(); }
+function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } syncHistory(); checkIcons(); }
 
 // ---------- nút quay lại: nút Back của điện thoại / trình duyệt đóng màn đang mở ----------
 const GATE_SUB = ['forgot', 'gsync', 'wipe'];
 function topLayer() {
   if ($('#installHost .install-ask')) return 'install';
   if ($('#sheet') && !$('#sheet').hidden) return 'sheet';
+  if (S.gate === 'app' && S.dock) return 'dock';
   if (S.gate === 'app') {
     if (S.welcome) return 'welcome';
     if (S.dpanel) return 'dpanel';
@@ -634,6 +688,7 @@ function closeTopLayer() {
   const t = topLayer();
   if (t === 'install') return installAskClose(false);
   if (t === 'sheet') return closeSheet();
+  if (t === 'dock') return setDock(false);
   if (t === 'welcome') S.welcome = false;
   else if (t === 'dpanel') { S.dpanel = null; S.dErr = ''; }
   else if (t === 'bpanel') { S.bpanel = null; S.bErr = ''; }
@@ -908,9 +963,67 @@ function renderApp() {
       </div>
       <p class="credit">Icon động: <a href="https://lordicon.com/" target="_blank" rel="noopener">Lordicon.com</a></p>
     </main>
-  </div>`;
+  </div>
+  ${dockHTML()}`;
   syncWelcome(name);
 }
+
+// ---------- thanh tab nổi trên điện thoại (bấm + để nở ra bảng thao tác nhanh) ----------
+const TAB_ICO = {
+  top: SV.pgirtdfe, budgets: SV.opqmrqco, debts: SV.xvmmqwjv, stats: SV.fcwmlcjj, ledger: SV.zbtbhzsg,
+};
+const DOCK_PLUS = SVP('<path d="M12 5v14M5 12h14" stroke-width="2.2"/>');
+function dockActions() {
+  const a = [
+    ['add-chi', 'Ghi khoản chi', SVP('<path d="M12 19V5M6 11l6-6 6 6"/>'), 'out'],
+    ['add-thu', 'Ghi khoản thu', SVP('<path d="M12 5v14M6 13l6 6 6-6"/>'), 'in'],
+    ['badd', 'Hạn mức', SV.opqmrqco],
+    ['dadd', 'Khoản nợ', SV.xvmmqwjv],
+    ['cadd', 'Danh mục', SV.uepnupwh],
+    ['backup', 'Sao lưu', SVP('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>')],
+    syncToken() ? ['syncnow', 'Đồng bộ', SVP('<path d="M20 11a8 8 0 0 0-14.5-4.5M4 13a8 8 0 0 0 14.5 4.5M5.5 3v3.5H9M18.5 21v-3.5H15"/>')] : ['sync', 'Bật đồng bộ', SV.evearxpv],
+    ['profile', 'Hồ sơ', SVP('<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>')],
+    ['account', 'Tài khoản', SV.fvkvwmsp],
+  ];
+  if (!isStandalone()) a.push(['install', 'Cài app', SVP('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M12 7v7M9.5 11.5L12 14l2.5-2.5"/>')]);
+  a.push(['lock', 'Khóa sổ', SVP('<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>')]);
+  return a;
+}
+function dockHTML() {
+  const nav = S.nav || 'top', open = !!S.dock;
+  return `<div class="tabdock${open ? ' open' : ''}" id="tabdock">
+    <div class="tabpill">
+      <nav class="tabs" aria-label="Menu chính">${NAV.filter(([id]) => TAB_ICO[id]).map(([id, , lb]) => `<button class="tab${nav === id ? ' on' : ''}" data-act="go" data-t="${id}" aria-label="${lb}" title="${lb}">${TAB_ICO[id]}</button>`).join('')}</nav>
+      <div class="dock-grid" role="menu">${dockActions().map(([k, lb, ic, tone]) => `<button class="dock-item" data-act="dockdo" data-do="${k}" role="menuitem"><span class="dock-ico${tone ? ' ' + tone : ''}">${ic}</span><span>${lb}</span></button>`).join('')}</div>
+    </div>
+    <button class="dock-fab" data-act="dock" aria-label="${open ? 'Đóng' : 'Thao tác nhanh'}" aria-expanded="${open}">${DOCK_PLUS}</button>
+  </div>`;
+}
+// Mở/đóng tại chỗ (không vẽ lại cả trang) để hiệu ứng nở ra chạy mượt
+function setDock(open) {
+  S.dock = !!open;
+  const d = $('#tabdock'); if (d) { d.classList.toggle('open', S.dock); const f = d.querySelector('.dock-fab'); if (f) { f.setAttribute('aria-expanded', S.dock); f.setAttribute('aria-label', S.dock ? 'Đóng' : 'Thao tác nhanh'); } }
+  syncHistory();
+}
+function setNavInPlace(id) {
+  S.nav = id;
+  document.querySelectorAll('.tabs .tab').forEach((b) => b.classList.toggle('on', b.dataset.t === id));
+  document.querySelectorAll('.rail-nav button').forEach((b) => b.classList.toggle('on', b.dataset.t === id));
+}
+// Chạm ra ngoài thì thu bảng thao tác nhanh lại
+document.addEventListener('pointerdown', (ev) => { if (S.dock && !ev.target.closest('#tabdock')) setDock(false); }, true);
+// Tự đổi tab đang chọn khi cuộn trang
+let spyT;
+addEventListener('scroll', () => {
+  if (S.gate !== 'app' || innerWidth > 760) return;
+  clearTimeout(spyT);
+  spyT = setTimeout(() => {
+    const ids = ['budgets', 'debts', 'stats', 'ledger'];
+    let cur = 'top';
+    for (const id of ids) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top < innerHeight * 0.4) cur = id; }
+    if (cur !== S.nav) setNavInPlace(cur);
+  }, 80);
+}, { passive: true });
 
 // ---------- sổ nợ: người khác nợ tôi / tôi nợ ----------
 const DK = { cho: 'Người khác nợ tôi', no: 'Tôi nợ' };
@@ -1521,9 +1634,26 @@ document.addEventListener('click', async (ev) => {
     catch (e) { S.panelErr = e.message || 'Không khôi phục được.'; render(); }
   }
   else if (act === 'go') {
-    S.nav = b.dataset.t; render();
+    if (S.dock) setDock(false);
+    if (innerWidth <= 760) setNavInPlace(b.dataset.t); else { S.nav = b.dataset.t; render(); }
     const el = document.getElementById(S.nav);
     if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  else if (act === 'dock') setDock(!S.dock);
+  else if (act === 'dockdo') {
+    const d = b.dataset.do;
+    setDock(false);
+    await sleep(180);
+    const goTo = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+    if (d === 'add-chi' || d === 'add-thu') { openSheet(null); if (d === 'add-thu') { F.k = 'thu'; F.cat = (CATS.thu[0] || ['khacthu'])[0]; paintForm(); } }
+    else if (d === 'badd' || d === 'dadd' || d === 'cadd') { const x = document.querySelector(`[data-act="${d}"]`); if (x) x.click(); }
+    else if (d === 'backup') { exportBackup(); S.panelMsg = 'Đã tạo file sao lưu. Cất file ở nơi an toàn (Drive riêng, Zalo Cloud của bạn…).'; render(); showToast('Đã tạo file sao lưu', 'ok'); }
+    else if (d === 'syncnow') { try { await syncNow(); showToast('Đã đồng bộ xong', 'ok'); } catch (e) { showToast(e.message || 'Lỗi đồng bộ', 'over'); } }
+    else if (d === 'sync') { S.panel = 'sync'; S.panelErr = ''; S.nav = 'security'; render(); goTo('security'); }
+    else if (d === 'profile') { const x = $('header [data-act="profile"]'); if (x) x.click(); }
+    else if (d === 'account') { S.panel = ''; S.nav = 'security'; render(); goTo('security'); }
+    else if (d === 'install') { await doInstall(); }
+    else if (d === 'lock') lock();
   }
   else if (act === 'badd') {
     const used = new Set(budgetsSorted().filter((x) => x.per === 'month').map((x) => x.cat));
@@ -1562,7 +1692,7 @@ document.addEventListener('click', async (ev) => {
       btn.textContent = 'Đã bôi đen, hãy tự chép';
     }
   }
-  else if (act === 'panel') { S.panel = b.dataset.p; S.panelErr = ''; S.panelMsg = ''; S.shownCode = ''; S.tokShow = false; render(); }
+  else if (act === 'panel') { S.panel = b.dataset.p; S.panelErr = ''; S.panelMsg = ''; S.shownCode = ''; S.tokShow = false; render(); if (S.panel) { const el = $('#security'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }
   else if (act === 'showcode') {
     try { S.shownCode = (await unseal(S.key, vault.recBox)).code; S.panel = 'code'; } catch { S.panelMsg = 'Không đọc được mã khôi phục.'; }
     render();
