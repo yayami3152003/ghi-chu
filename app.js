@@ -957,6 +957,36 @@ function budgetStatus(b, anchor) {
   const pct = b.amt ? spent / b.amt : 0;
   return { spent, pct, left: b.amt - spent, level: pct >= 1 ? 'over' : pct >= 0.8 ? 'warn' : 'ok' };
 }
+// Chia hạn mức ra từng ngày. VD 1.000.000 ₫/tháng 30 ngày ≈ 33.333 ₫/ngày.
+// Kỳ đang chạy: tính lại "hôm nay được chi" = (hạn mức − đã chi các ngày trước) ÷ số ngày còn lại tính cả hôm nay.
+function dailyPlan(b, anchor) {
+  const [s, e] = rangeOf(b.per, anchor);
+  const days = Math.round((e - s) / 864e5) + 1, base = b.amt / days, t = today();
+  if (t < s || t > e) return { days, base, current: false };
+  const tk = ymd(t), a = ymd(s);
+  let before = 0, todaySpent = 0;
+  for (const x of S.tx.values()) {
+    if (x.k !== 'chi' || x.cat !== b.cat) continue;
+    if (x.d >= a && x.d < tk) before += x.a; else if (x.d === tk) todaySpent += x.a;
+  }
+  const daysLeft = Math.round((e - t) / 864e5) + 1;
+  const allow = Math.max(0, (b.amt - before) / daysLeft);
+  return { days, base, current: true, daysLeft, allow, todaySpent, todayLeft: allow - todaySpent };
+}
+function dailyLine(b) {
+  const p = dailyPlan(b, S.anchor);
+  if (b.per === 'day') return p.current ? `Hôm nay đã chi ${money(p.todaySpent)}` : '';
+  const head = `Mỗi ngày nên chi ~${money(p.base)} (${p.days} ngày)`;
+  if (!p.current) return head;
+  const over = p.todayLeft < 0;
+  return `${head}<br><span class="${over ? 'day-over' : 'day-ok'}">Hôm nay được chi ${money(p.allow)}, đã chi ${money(p.todaySpent)} · ${over ? `<b>lố ${money(-p.todayLeft)}</b>` : `còn ${money(p.todayLeft)}`}</span>`;
+}
+function dailyPreview(amt, per) {
+  if (!amt || per === 'day') return '';
+  const [s, e] = rangeOf(per, today());
+  const days = Math.round((e - s) / 864e5) + 1;
+  return `≈ <b>${money(amt / days)}</b> mỗi ngày (${per === 'month' ? 'tháng' : 'tuần'} này có ${days} ngày)`;
+}
 const budgetsSorted = () => [...(S.bg || new Map()).values()].sort((x, y) => (x.ts || 0) - (y.ts || 0));
 function remindLines(anchor) {
   return budgetsSorted().map((b) => ({ b, st: budgetStatus(b, anchor) })).filter((x) => x.st.level !== 'ok');
@@ -977,6 +1007,7 @@ function budgetForm() {
   return `<form id="budgetForm" class="stack" novalidate>
     <div class="field">Danh mục<div class="pick">${CATS.chi.map(([id, name]) => `<button type="button" data-act="bcat" data-c="${id}" aria-pressed="${p.cat === id}" style="--cc:${ccVar(id)}"><span class="ci">${ICON[id]}</span>${name}</button>`).join('')}</div></div>
     <label class="field">Chi tối đa (đồng)<input id="bAmt" inputmode="numeric" value="${p.amt ? NF.format(p.amt) : ''}" placeholder="VD: 1.000.000"></label>
+    <p class="pct" id="bDaily" style="text-align:left;margin-top:-4px">${dailyPreview(p.amt, p.per)}</p>
     <div class="field">Tính theo<div class="mini-seg" style="align-self:flex-start">${['day', 'week', 'month'].map((v) => `<button type="button" data-act="bper" data-v="${v}" aria-pressed="${p.per === v}">${cap(PER_WORD[v])}</button>`).join('')}</div></div>
     ${S.bErr ? `<p class="err">${esc(S.bErr)}</p>` : ''}
     <div class="actions">${p.id ? `<button type="button" class="btn ghost danger${p.armed ? ' armed' : ''}" data-act="bdel">${p.armed ? 'Bấm lần nữa để xóa' : 'Xóa'}</button>` : ''}<button type="button" class="btn ghost" data-act="bcancel">Hủy</button><button type="submit" class="btn primary">Lưu hạn mức</button></div>
@@ -989,7 +1020,7 @@ function budgetCard() {
   else if (!list.length) body = `<p class="pct" style="text-align:left">Chưa có hạn mức nào. Đặt hạn mức để được nhắc khi sắp chi quá tay.</p>`;
   else body = `<div class="bg-list">${list.map((b) => {
     const st = budgetStatus(b, S.anchor);
-    return `<button class="bg-row lv-${st.level}" data-act="bedit" data-id="${esc(b.id)}" style="--cc:${ccVar(b.cat)}"><span class="ci">${catIcon(b.cat, 26, '.bg-row')}</span><span class="cat-main"><span class="cat-top"><span>${esc(CAT_NAME[b.cat] || b.cat)}</span><b>${short(st.spent)} / ${short(b.amt)}</b></span><span class="track"><i style="width:${Math.min(100, st.pct * 100).toFixed(1)}%"></i></span><span class="bg-note">${st.level === 'over' ? `Vượt ${money(-st.left)}` : `Còn ${money(st.left)}`} · ${Math.round(st.pct * 100)}% · theo ${PER_WORD[b.per]}</span></span></button>`;
+    return `<button class="bg-row lv-${st.level}" data-act="bedit" data-id="${esc(b.id)}" style="--cc:${ccVar(b.cat)}"><span class="ci">${catIcon(b.cat, 26, '.bg-row')}</span><span class="cat-main"><span class="cat-top"><span>${esc(CAT_NAME[b.cat] || b.cat)}</span><b>${short(st.spent)} / ${short(b.amt)}</b></span><span class="track"><i style="width:${Math.min(100, st.pct * 100).toFixed(1)}%"></i></span><span class="bg-note">${st.level === 'over' ? `Vượt ${money(-st.left)}` : `Còn ${money(st.left)}`} · ${Math.round(st.pct * 100)}% · theo ${PER_WORD[b.per]}</span>${dailyLine(b) ? `<span class="bg-day">${dailyLine(b)}</span>` : ''}</span></button>`;
   }).join('')}</div><p class="pct" style="text-align:left">Chạm vào một hạn mức để sửa hoặc xóa. Nhắc khi chi tới 80%.</p>`;
   return `<section class="card" id="budgets"><div class="card-head"><h3>${S.bpanel ? (S.bpanel.id ? 'Sửa hạn mức' : 'Thêm hạn mức') : 'Hạn mức chi tiêu'}</h3>${S.bpanel ? '' : `<button class="mini-add" data-act="badd">+ Thêm hạn mức</button>`}</div>${body}</section>`;
 }
@@ -1286,6 +1317,7 @@ function showErr(m) { fErr.textContent = m; fErr.hidden = false; }
 fAmt.addEventListener('input', () => setAmt(getAmt()));
 document.addEventListener('input', (ev) => {
   if (['bAmt', 'dAmt', 'pAmt'].includes(ev.target.id)) { const n = Number(digits(ev.target.value) || 0); ev.target.value = n ? NF.format(n) : ''; }
+  if (ev.target.id === 'bAmt' && S.bpanel) { const el = $('#bDaily'); if (el) el.innerHTML = dailyPreview(Number(digits(ev.target.value) || 0), S.bpanel.per); }
 });
 $('#sheet').addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -1311,6 +1343,11 @@ $('#sheet').addEventListener('submit', async (ev) => {
         showToast(hit.st.level === 'over'
           ? `${nm}: đã vượt hạn mức ${per} ${money(-hit.st.left)}`
           : `${nm}: đã dùng ${Math.round(hit.st.pct * 100)}% hạn mức ${per}, còn ${money(hit.st.left)}`, hit.st.level);
+      } else if (tx.d === ymd(today())) {
+        // Chưa chạm hạn mức cả kỳ nhưng hôm nay đã chi quá mức nên chi trong ngày
+        const b = budgetsSorted().find((x) => x.cat === tx.cat && x.per !== 'day');
+        const p = b && dailyPlan(b, today());
+        if (p && p.current && p.todayLeft < 0) showToast(`${CAT_NAME[tx.cat]}: hôm nay đã chi ${money(p.todaySpent)}, lố ${money(-p.todayLeft)} so với mức nên chi ${money(p.allow)}/ngày`, 'warn');
       }
     }
   } catch (e) { showErr(errText(e)); fSave.disabled = false; }
