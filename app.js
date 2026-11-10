@@ -614,7 +614,47 @@ function startDemo() {
 
 // ---------- vẽ ----------
 const app = $('#app');
-function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } }
+function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } syncHistory(); }
+
+// ---------- nút quay lại: nút Back của điện thoại / trình duyệt đóng màn đang mở ----------
+const GATE_SUB = ['forgot', 'gsync', 'wipe'];
+function topLayer() {
+  if ($('#installHost .install-ask')) return 'install';
+  if ($('#sheet') && !$('#sheet').hidden) return 'sheet';
+  if (S.gate === 'app') {
+    if (S.welcome) return 'welcome';
+    if (S.dpanel) return 'dpanel';
+    if (S.bpanel) return 'bpanel';
+    if (S.cpanel) return 'cpanel';
+    if (S.panel) return 'panel';
+  } else if (GATE_SUB.includes(S.gate)) return 'gate';
+  return '';
+}
+function closeTopLayer() {
+  const t = topLayer();
+  if (t === 'install') return installAskClose(false);
+  if (t === 'sheet') return closeSheet();
+  if (t === 'welcome') S.welcome = false;
+  else if (t === 'dpanel') { S.dpanel = null; S.dErr = ''; }
+  else if (t === 'bpanel') { S.bpanel = null; S.bErr = ''; }
+  else if (t === 'cpanel') { S.cpanel = null; S.cErr = ''; }
+  else if (t === 'panel') { S.panel = ''; S.panelErr = ''; S.tokShow = false; S.pairShow = false; S.snapArm = ''; }
+  else if (t === 'gate') { S.gate = vault ? 'unlock' : 'setup'; S.gateErr = ''; }
+  else return;
+  render();
+}
+let layerPushed = false, ignorePop = false;
+function syncHistory() {
+  const open = !!topLayer();
+  if (open && !layerPushed) { history.pushState({ gcLayer: 1 }, ''); layerPushed = true; }
+  else if (!open && layerPushed) { layerPushed = false; ignorePop = true; history.back(); }
+}
+addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop = false; return; }
+  layerPushed = false;
+  if (topLayer()) closeTopLayer();
+});
+const backBtn = () => `<button class="back-btn" data-act="back-layer" aria-label="Quay lại">${P('<path d="M15 5l-7 7 7 7"/>')}Quay lại</button>`;
 
 function gateShell(inner) {
   app.innerHTML = `<div class="gate"><div class="gate-card"><div class="logo">${li('coins', { size: 34, trigger: 'loop', delay: 2500, primary: '#04201d', secondary: '#04201d' })}</div>${inner}${isStandalone() ? '' : '<button class="link" data-act="install">Cài ứng dụng Ghi chú vào máy</button>'}</div></div>`;
@@ -886,7 +926,7 @@ function dueInfo(x) {
 }
 function debtAlerts() { return debtsList().map((x) => ({ x, di: dueInfo(x) })).filter((o) => o.di && o.di.level !== 'ok'); }
 function debtsCard() {
-  if (S.dpanel) return `<section class="card" id="debts"><div class="card-head"><h3>${S.dpanel.id ? 'Sửa khoản nợ' : 'Thêm khoản nợ'}</h3></div>${debtForm()}</section>`;
+  if (S.dpanel) return `<section class="card" id="debts"><div class="card-head">${backBtn()}<h3>${S.dpanel.id ? 'Sửa khoản nợ' : 'Thêm khoản nợ'}</h3></div>${debtForm()}</section>`;
   const k = S.dk || 'cho', all = debtsList();
   const sum = (kk) => all.filter((x) => x.k === kk && debtOpen(x)).reduce((s, x) => s + debtLeft(x), 0);
   const ofK = all.filter((x) => x.k === k);
@@ -1030,7 +1070,7 @@ function budgetCard() {
     const st = budgetStatus(b, S.anchor);
     return `<button class="bg-row lv-${st.level}" data-act="bedit" data-id="${esc(b.id)}" style="--cc:${ccVar(b.cat)}"><span class="ci">${catIcon(b.cat, 26, '.bg-row')}</span><span class="cat-main"><span class="cat-top"><span>${esc(CAT_NAME[b.cat] || b.cat)}</span><b>${short(st.spent)} / ${short(b.amt)}</b></span><span class="track"><i style="width:${Math.min(100, st.pct * 100).toFixed(1)}%"></i></span><span class="bg-note">${st.level === 'over' ? `Vượt ${money(-st.left)}` : `Còn ${money(st.left)}`} · ${Math.round(st.pct * 100)}% · theo ${PER_WORD[b.per]}</span>${dailyLine(b) ? `<span class="bg-day">${dailyLine(b)}</span>` : ''}</span></button>`;
   }).join('')}</div><p class="pct" style="text-align:left">Chạm vào một hạn mức để sửa hoặc xóa. Nhắc khi chi tới 80%.</p>`;
-  return `<section class="card" id="budgets"><div class="card-head"><h3>${S.bpanel ? (S.bpanel.id ? 'Sửa hạn mức' : 'Thêm hạn mức') : 'Hạn mức chi tiêu'}</h3>${S.bpanel ? '' : `<button class="mini-add" data-act="badd">+ Thêm hạn mức</button>`}</div>${body}</section>`;
+  return `<section class="card" id="budgets"><div class="card-head">${S.bpanel ? backBtn() : ''}<h3>${S.bpanel ? (S.bpanel.id ? 'Sửa hạn mức' : 'Thêm hạn mức') : 'Hạn mức chi tiêu'}</h3>${S.bpanel ? '' : `<button class="mini-add" data-act="badd">+ Thêm hạn mức</button>`}</div>${body}</section>`;
 }
 async function saveBudget() {
   const p = S.bpanel;
@@ -1136,10 +1176,12 @@ function installAskShow(force) {
   if (!force && Date.now() < until) return;
   if (!host.firstChild) iaStep = 'ask';
   host.innerHTML = installAskHTML();
+  syncHistory();
 }
 function installAskClose(later) {
   if (later) { try { localStorage.setItem('gc.installLater', String(Date.now() + 7 * 864e5)); } catch {} }
   const host = $('#installHost'); if (host) host.innerHTML = '';
+  syncHistory();
 }
 function installGuide() {
   const ios = isIOS(), android = /android/i.test(navigator.userAgent);
@@ -1156,7 +1198,7 @@ function installGuide() {
 
 // ---------- quản lý danh mục ----------
 function catsCard() {
-  if (S.cpanel) return `<section class="card" id="cats"><div class="card-head"><h3>${S.cpanel.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3></div>${catForm()}</section>`;
+  if (S.cpanel) return `<section class="card" id="cats"><div class="card-head">${backBtn()}<h3>${S.cpanel.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3></div>${catForm()}</section>`;
   const k = S.ck || 'chi';
   const list = CAT_LIST.filter((c) => c.k === k && !c.del);
   return `<section class="card" id="cats"><div class="card-head"><h3>Danh mục</h3>
@@ -1301,7 +1343,8 @@ function securityCard() {
       ${vault && vault.v === 2 && S.raw ? `<button class="btn ghost" data-act="panel" data-p="pin">Đổi mật khẩu</button><button class="btn ghost" data-act="showcode">Xem mã khôi phục</button>` : ''}
     </div>`;
   }
-  return `<section class="card" id="security"><div class="card-head"><h3>${S.panel === 'profile' ? 'Hồ sơ' : 'Tài khoản & sao lưu'}</h3><p>Tự khóa khi rời trang 3 phút hoặc để yên 10 phút</p></div>${body}</section>`;
+  const PANEL_TITLE = { profile: 'Hồ sơ', sync: 'Bật đồng bộ', pair: 'Kết nối máy khác', token: 'Mã đồng bộ', snaps: 'Bản tự lưu', import: 'Nhập file sao lưu', pin: 'Đổi mật khẩu', code: 'Mã khôi phục', install: 'Cài ứng dụng' };
+  return `<section class="card" id="security"><div class="card-head">${S.panel ? backBtn() : ''}<h3>${PANEL_TITLE[S.panel] || 'Tài khoản & sao lưu'}</h3>${S.panel ? '' : '<p>Tự khóa khi rời trang 3 phút hoặc để yên 10 phút</p>'}</div>${body}</section>`;
 }
 
 // ---------- form thêm / sửa ----------
@@ -1325,9 +1368,10 @@ function openSheet(tx) {
   fErr.hidden = true; fSave.disabled = false;
   paintForm();
   $('#scrim').hidden = false; $('#sheet').hidden = false;
+  syncHistory();
   if (!tx) setTimeout(() => fAmt.focus(), 60);
 }
-function closeSheet() { $('#scrim').hidden = true; $('#sheet').hidden = true; }
+function closeSheet() { $('#scrim').hidden = true; $('#sheet').hidden = true; syncHistory(); }
 function showErr(m) { fErr.textContent = m; fErr.hidden = false; }
 
 fAmt.addEventListener('input', () => setAmt(getAmt()));
@@ -1400,6 +1444,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'forgot') { S.gate = 'forgot'; S.gateErr = ''; render(); }
   else if (act === 'wclose') { if (ev.target.closest('[data-stop]') && b.classList.contains('welcome-scrim')) return; S.welcome = false; render(); }
   else if (act === 'wadd') { S.welcome = false; render(); openSheet(null); }
+  else if (act === 'back-layer') closeTopLayer();
   else if (act === 'install') { if (S.gate === 'app') await doInstall(); else installAskShow(true); }
   else if (act === 'iask-yes') {
     // Chrome/Edge/Android: bật hộp cài đặt của hệ thống. Chờ tối đa 2 giây nếu trình duyệt chưa sẵn sàng.
