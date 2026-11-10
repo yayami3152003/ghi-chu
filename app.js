@@ -613,7 +613,7 @@ async function saveCfg(id, obj) {
   await cfgCol.doc(id).set(await seal(S.key, obj));
 }
 function lock() {
-  S.gen++; S.dock = false;
+  S.gen++; S.dock = false; S.page = null; S.calSel = null;
   if (unsub) { unsub(); unsub = null; }
   if (unsubBg) { unsubBg(); unsubBg = null; }
   if (unsubCfg) { unsubCfg(); unsubCfg = null; }
@@ -677,6 +677,7 @@ function topLayer() {
   if (S.gate === 'app' && S.dock) return 'dock';
   if (S.gate === 'app') {
     if (S.welcome) return 'welcome';
+    if (S.page) return S.calSel ? 'calsel' : 'page';
     if (S.dpanel) return 'dpanel';
     if (S.bpanel) return 'bpanel';
     if (S.cpanel) return 'cpanel';
@@ -690,6 +691,8 @@ function closeTopLayer() {
   if (t === 'sheet') return closeSheet();
   if (t === 'dock') return setDock(false);
   if (t === 'welcome') S.welcome = false;
+  else if (t === 'calsel') S.calSel = null;
+  else if (t === 'page') { S.page = null; S.calSel = null; S.nav = 'top'; render(); return scrollTo(0, 0); }
   else if (t === 'dpanel') { S.dpanel = null; S.dErr = ''; }
   else if (t === 'bpanel') { S.bpanel = null; S.bErr = ''; }
   else if (t === 'cpanel') { S.cpanel = null; S.cErr = ''; }
@@ -848,7 +851,7 @@ function donutSVG(rows, totalV) {
   return `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="${r}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="22"/>${arcs}<circle cx="100" cy="100" r="60" fill="rgba(8,17,19,.55)" stroke="rgba(255,255,255,.08)"/></svg>`;
 }
 function partOfDay() { const h = new Date().getHours(); return h < 11 ? 'sáng' : h < 13 ? 'trưa' : h < 18 ? 'chiều' : 'tối'; }
-const NAV = [['top', 'home', 'Tổng quan'], ['budgets', 'piggy', 'Hạn mức'], ['debts', 'debt', 'Sổ nợ'], ['stats', 'chart', 'Thống kê'], ['ledger', 'book', 'Sổ ghi'], ['security', 'wrench', 'Bảo mật']];
+const NAV = [['top', 'home', 'Tổng quan'], ['calendar', 'calendar', 'Lịch'], ['budgets', 'piggy', 'Hạn mức'], ['debts', 'debt', 'Sổ nợ'], ['stats', 'chart', 'Thống kê'], ['ledger', 'book', 'Sổ ghi'], ['security', 'wrench', 'Bảo mật']];
 
 function renderApp() {
   const [s, e] = rangeOf(S.view, S.anchor);
@@ -929,7 +932,7 @@ function renderApp() {
       </header>
       ${S.demo ? `<div class="demo-bar"><b>Dữ liệu mẫu.</b> Không lưu lại, chỉ để xem thử cách dùng.</div>` : ''}
       ${S.loadErr ? `<div class="note">${esc(S.loadErr)}</div>` : ''}
-      ${remindBanner()}
+      ${S.page === 'calendar' ? `<div class="page-cal">${calendarCard()}</div>` : `${remindBanner()}
       <div class="controls">
         <nav class="seg" aria-label="Xem theo">${[['day', 'Ngày'], ['week', 'Tuần'], ['month', 'Tháng']].map(([v, l]) => `<button data-act="view" data-v="${v}" aria-pressed="${S.view === v}">${l}</button>`).join('')}</nav>
         <div class="period"><button class="nav" data-act="shift" data-dir="-1" aria-label="Kỳ trước">${UI.prev}</button>
@@ -960,7 +963,7 @@ function renderApp() {
           ${catsCard()}
           ${S.demo ? '' : securityCard()}
         </div>
-      </div>
+      </div>`}
       <p class="credit">Icon động: <a href="https://lordicon.com/" target="_blank" rel="noopener">Lordicon.com</a></p>
     </main>
   </div>
@@ -970,7 +973,7 @@ function renderApp() {
 
 // ---------- thanh tab nổi trên điện thoại (bấm + để nở ra bảng thao tác nhanh) ----------
 const TAB_ICO = {
-  top: SV.pgirtdfe, budgets: SV.opqmrqco, debts: SV.xvmmqwjv, stats: SV.fcwmlcjj, ledger: SV.zbtbhzsg,
+  top: SV.pgirtdfe, calendar: SV.laobovmg, budgets: SV.opqmrqco, debts: SV.xvmmqwjv, stats: SV.fcwmlcjj, ledger: SV.zbtbhzsg,
 };
 const DOCK_PLUS = SVP('<path d="M12 5v14M5 12h14" stroke-width="2.2"/>');
 function dockActions() {
@@ -1015,7 +1018,7 @@ document.addEventListener('pointerdown', (ev) => { if (S.dock && !ev.target.clos
 // Tự đổi tab đang chọn khi cuộn trang
 let spyT;
 addEventListener('scroll', () => {
-  if (S.gate !== 'app' || innerWidth > 760) return;
+  if (S.gate !== 'app' || innerWidth > 760 || S.page) return;
   clearTimeout(spyT);
   spyT = setTimeout(() => {
     const ids = ['budgets', 'debts', 'stats', 'ledger'];
@@ -1024,6 +1027,76 @@ addEventListener('scroll', () => {
     if (cur !== S.nav) setNavInPlace(cur);
   }, 80);
 }, { passive: true });
+
+// ---------- lịch chi tiêu theo tháng: mỗi ô là một ngày, cột cuối là tổng cả tuần ----------
+const CAL_WD = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const calMonth = () => S.calMonth || new Date(today().getFullYear(), today().getMonth(), 1);
+function dayTotals(a, z) {
+  const m = {};
+  for (const t of S.tx.values()) {
+    if (t.d < a || t.d > z) continue;
+    const o = m[t.d] || (m[t.d] = { chi: 0, thu: 0, n: 0 });
+    o[t.k] += t.a; o.n++;
+  }
+  return m;
+}
+function calendarCard() {
+  const m0 = calMonth(), y = m0.getFullYear(), mo = m0.getMonth();
+  const first = new Date(y, mo, 1), last = new Date(y, mo + 1, 0);
+  const start = addDays(first, -((first.getDay() + 6) % 7)), end = addDays(last, 6 - ((last.getDay() + 6) % 7));
+  const tot = dayTotals(ymd(start), ymd(end)), tk = ymd(today());
+  let maxChi = 0; for (const k in tot) maxChi = Math.max(maxChi, tot[k].chi);
+  let cells = '', mChi = 0, mThu = 0;
+  for (let ws = start; ws <= end; ws = addDays(ws, 7)) {
+    let wChi = 0, wThu = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(ws, i), k = ymd(d), o = tot[k] || { chi: 0, thu: 0, n: 0 }, inM = d.getMonth() === mo;
+      wChi += o.chi; wThu += o.thu; if (inM) { mChi += o.chi; mThu += o.thu; }
+      const heat = o.chi && maxChi ? (0.1 + 0.4 * (o.chi / maxChi)).toFixed(2) : 0;
+      const sel = S.calSel && S.calSel.type === 'day' && S.calSel.d === k;
+      cells += `<button class="cal-day${inM ? '' : ' out'}${k === tk ? ' today' : ''}${sel ? ' sel' : ''}" data-act="calday" data-d="${k}" style="--heat:${heat}" aria-label="${WD[d.getDay()]} ${dm(d)}: chi ${money(o.chi)}${o.thu ? ', thu ' + money(o.thu) : ''}">
+        <span class="cd-n">${d.getDate()}</span>${o.chi ? `<span class="cd-chi">${short(o.chi)}</span>` : ''}${o.thu ? `<span class="cd-thu">+${short(o.thu)}</span>` : ''}</button>`;
+    }
+    const wk = ymd(ws), wsel = S.calSel && S.calSel.type === 'week' && S.calSel.d === wk;
+    cells += `<button class="cal-week${wsel ? ' sel' : ''}" data-act="calweek" data-d="${wk}" aria-label="Tuần ${isoWeek(ws)}: chi ${money(wChi)}"><span class="cw-l">Tuần ${isoWeek(ws)}</span><span class="cw-chi">${wChi ? short(wChi) : '0'}</span>${wThu ? `<span class="cd-thu">+${short(wThu)}</span>` : ''}</button>`;
+  }
+  const isNowM = y === today().getFullYear() && mo === today().getMonth();
+  const daysCounted = isNowM ? today().getDate() : last.getDate();
+  return `<section class="card" id="calendar"><div class="card-head">${backBtn()}<h3>Lịch chi tiêu</h3>
+      <div class="cal-nav"><button class="nav" data-act="calmove" data-dir="-1" aria-label="Tháng trước">${UI.prev}</button><b>Tháng ${mo + 1}/${y}</b><button class="nav" data-act="calmove" data-dir="1" aria-label="Tháng sau">${UI.next}</button></div></div>
+    ${isNowM ? '' : '<button class="link" data-act="calnow" style="align-self:flex-start">Về tháng này</button>'}
+    <div class="cal-head">${CAL_WD.map((w) => `<span>${w}</span>`).join('')}<span>Cả tuần</span></div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-sum">
+      <div><span>Chi cả tháng</span><b class="amt-out">${money(mChi)}</b></div>
+      <div><span>Thu cả tháng</span><b class="amt-in">${money(mThu)}</b></div>
+      <div><span>Còn lại</span><b>${mThu - mChi < 0 ? MINUS : ''}${money(Math.abs(mThu - mChi))}</b></div>
+      <div><span>Trung bình chi/ngày</span><b>${money(mChi / Math.max(1, daysCounted))}</b></div>
+    </div>
+    ${calDetail()}
+    <p class="pct" style="text-align:left">Chạm vào một ngày để xem và ghi khoản cho ngày đó. Chạm cột "Cả tuần" để xem tuần đó chi từng ngày bao nhiêu.</p>
+  </section>`;
+}
+function txRowHTML(x) {
+  return `<button class="tx" data-act="edit" data-id="${esc(x.id)}" style="--cc:${ccVar(x.cat)}"><span class="ci">${catIcon(x.cat, 24, '.tx')}</span><span class="tx-main"><span class="tx-cat">${esc(CAT_NAME[x.cat] || x.cat)}</span>${x.note ? `<span class="tx-note">${esc(x.note)}</span>` : ''}</span><span class="tx-amt ${x.k === 'thu' ? 'in' : 'out'}">${signed(x)}</span></button>`;
+}
+function calDetail() {
+  const s = S.calSel; if (!s) return '';
+  if (s.type === 'day') {
+    const d = parse(s.d), list = [...S.tx.values()].filter((t) => t.d === s.d).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const chi = total(list, 'chi'), thu = total(list, 'thu');
+    return `<div class="cal-detail"><div class="card-head"><h3>${WD[d.getDay()]}, ${dm(d)}/${d.getFullYear()}</h3><button class="icon-btn" data-act="calclose" aria-label="Đóng">×</button></div>
+      <p class="pct" style="text-align:left">Chi <b class="amt-out">${money(chi)}</b>${thu ? ` · Thu <b class="amt-in">${money(thu)}</b>` : ''} · ${list.length} khoản</p>
+      <div class="ledger">${list.map(txRowHTML).join('') || '<p class="pct" style="text-align:left">Ngày này chưa ghi khoản nào.</p>'}</div>
+      <button class="btn primary" data-act="caladd" data-d="${s.d}">+ Ghi khoản cho ngày này</button></div>`;
+  }
+  const ws = parse(s.d), we = addDays(ws, 6), tot = dayTotals(ymd(ws), ymd(we));
+  let wChi = 0, wThu = 0, max = 0;
+  const days = Array.from({ length: 7 }, (_, i) => { const d = addDays(ws, i), o = tot[ymd(d)] || { chi: 0, thu: 0 }; wChi += o.chi; wThu += o.thu; max = Math.max(max, o.chi); return { d, o }; });
+  return `<div class="cal-detail"><div class="card-head"><h3>Tuần ${isoWeek(ws)} · ${dm(ws)} – ${dm(we)}</h3><button class="icon-btn" data-act="calclose" aria-label="Đóng">×</button></div>
+    <p class="pct" style="text-align:left">Cả tuần chi <b class="amt-out">${money(wChi)}</b>${wThu ? ` · thu <b class="amt-in">${money(wThu)}</b>` : ''} · trung bình ${money(wChi / 7)}/ngày</p>
+    <div class="week-bars">${days.map(({ d, o }) => `<button class="wb-row" data-act="calday" data-d="${ymd(d)}"><span>${WDS[d.getDay()]} ${dm(d)}</span><span class="track"><i style="width:${max ? Math.max(2, (o.chi / max) * 100).toFixed(1) : 0}%"></i></span><b>${o.chi ? money(o.chi) : '—'}</b></button>`).join('')}</div></div>`;
+}
 
 // ---------- sổ nợ: người khác nợ tôi / tôi nợ ----------
 const DK = { cho: 'Người khác nợ tôi', no: 'Tôi nợ' };
@@ -1472,10 +1545,10 @@ function paintForm() {
   $('#fCats').innerHTML = CATS[F.k].map(([id, name]) => `<button type="button" data-act="cat" data-c="${id}" aria-pressed="${F.cat === id}" style="--cc:${ccVar(id)}"><span class="ci">${ICON[id]}</span>${name}</button>`).join('');
   fSave.textContent = F.id ? 'Lưu thay đổi' : F.k === 'chi' ? 'Lưu khoản chi' : 'Lưu khoản thu';
 }
-function openSheet(tx) {
+function openSheet(tx, dateStr) {
   F.id = tx ? tx.id : null; F.k = tx ? tx.k : 'chi'; F.cat = tx ? tx.cat : (CATS.chi[0] || ['khac'])[0]; F.ts = tx ? tx.ts : 0;
   setAmt(tx ? tx.a : 0); fNote.value = tx ? tx.note || '' : '';
-  fDate.value = tx ? tx.d : ymd(S.view === 'day' ? S.anchor : today());
+  fDate.value = tx ? tx.d : (dateStr || ymd(S.view === 'day' ? S.anchor : today()));
   $('#sheetTitle').textContent = tx ? 'Sửa khoản' : 'Thêm khoản';
   fDel.hidden = !tx; fDel.classList.remove('armed'); fDel.textContent = 'Xóa';
   fErr.hidden = true; fSave.disabled = false;
@@ -1635,10 +1708,23 @@ document.addEventListener('click', async (ev) => {
   }
   else if (act === 'go') {
     if (S.dock) setDock(false);
-    if (innerWidth <= 760) setNavInPlace(b.dataset.t); else { S.nav = b.dataset.t; render(); }
+    const t = b.dataset.t;
+    if (t === 'calendar') { S.page = 'calendar'; S.calSel = null; S.nav = 'calendar'; render(); scrollTo(0, 0); return; }
+    if (S.page) { S.page = null; S.calSel = null; S.nav = t; render(); }
+    else if (innerWidth <= 760) setNavInPlace(t); else { S.nav = t; render(); }
     const el = document.getElementById(S.nav);
-    if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (el) el.scrollIntoView({ block: 'start', behavior: S.nav === 'top' ? 'auto' : 'smooth' });
   }
+  else if (act === 'calmove') { const m = calMonth(); S.calMonth = new Date(m.getFullYear(), m.getMonth() + Number(b.dataset.dir), 1); S.calSel = null; render(); }
+  else if (act === 'calnow') { S.calMonth = null; S.calSel = null; render(); }
+  else if (act === 'calday' || act === 'calweek') {
+    const type = act === 'calday' ? 'day' : 'week', d = b.dataset.d;
+    S.calSel = S.calSel && S.calSel.type === type && S.calSel.d === d ? null : { type, d };
+    render();
+    const el = $('.cal-detail'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  else if (act === 'calclose') { S.calSel = null; render(); }
+  else if (act === 'caladd') openSheet(null, b.dataset.d);
   else if (act === 'dock') setDock(!S.dock);
   else if (act === 'dockdo') {
     const d = b.dataset.do;
