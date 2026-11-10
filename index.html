@@ -137,6 +137,14 @@ lord-icon{display:block;flex:none}
 .bg-row em{font-style:normal;color:var(--muted);font-weight:500;font-size:12px}
 .bg-note{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .mini-add{color:var(--accent);font-weight:700;font-size:13px;padding:4px 2px}
+.today-allow{position:relative;padding:10px 12px;border-radius:16px;background:rgba(4,20,24,.35);border:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:6px}
+.today-allow .ta-head{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:rgba(231,243,241,.72);font-weight:600}
+.today-allow ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.today-allow li{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline;font-size:13.5px}
+.today-allow li b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.today-allow li b.pos{color:var(--in)} .today-allow li b.neg{color:var(--out)}
+.today-allow li small{color:rgba(231,243,241,.6);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.today-allow.in-welcome{align-self:stretch;text-align:left}
 .bg-day{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:2px;font-variant-numeric:tabular-nums}
 .bg-day .day-ok{color:var(--in)} .bg-day .day-over{color:var(--out)}
 .lv-warn .track i{background:var(--warn)} .lv-warn .bg-note{color:var(--warn);font-weight:600}

@@ -851,6 +851,7 @@ function renderApp() {
               <div class="hero-label">Còn lại ${WORD[S.view]}</div>
               <div class="hero-num">${net < 0 ? MINUS : ''}${NF.format(Math.abs(net))}<small>₫</small></div>
               <div class="hero-chips"><div class="hero-chip in"><span><i class="dot"></i>Tổng thu</span><b>${money(thu)}</b></div><div class="hero-chip out"><span><i class="dot"></i>Tổng chi</span><b>${money(chi)}</b></div></div>
+              ${todayAllowHTML()}
               ${cmp ? `<div class="hero-cmp">${cmp}</div>` : ''}
             </section>
             ${budgetCard()}
@@ -981,6 +982,13 @@ function dailyLine(b) {
   const over = p.todayLeft < 0;
   return `${head}<br><span class="${over ? 'day-over' : 'day-ok'}">Hôm nay được chi ${money(p.allow)}, đã chi ${money(p.todaySpent)} · ${over ? `<b>lố ${money(-p.todayLeft)}</b>` : `còn ${money(p.todayLeft)}`}</span>`;
 }
+// Tóm tắt "hôm nay được chi" của mọi hạn mức theo tuần/tháng, đặt ở thẻ số dư và lời chào
+function todayAllowHTML(where) {
+  const plans = budgetsSorted().filter((b) => b.per !== 'day').map((b) => ({ b, p: dailyPlan(b, today()) })).filter((o) => o.p.current);
+  if (!plans.length) return '';
+  const items = plans.map(({ b, p }) => `<li><span>${esc(CAT_NAME[b.cat] || b.cat)}</span><b class="${p.todayLeft < 0 ? 'neg' : 'pos'}">${p.todayLeft < 0 ? `lố ${money(-p.todayLeft)}` : `còn ${money(p.todayLeft)}`}</b><small>/ ${money(p.allow)}</small></li>`).join('');
+  return `<div class="today-allow${where === 'w' ? ' in-welcome' : ''}"><div class="ta-head">Hôm nay được chi</div><ul>${items}</ul></div>`;
+}
 function dailyPreview(amt, per) {
   if (!amt || per === 'day') return '';
   const [s, e] = rangeOf(per, today());
@@ -1062,7 +1070,7 @@ function welcomeHTML(name) {
     <span class="sheen" aria-hidden="true"></span>
     <span class="avatar big">${avatarInner(S.profile, name)}</span>
     <h2 id="wTitle">${esc(name)} ơi, hôm nay đã tiết kiệm chưa?</h2>
-    <p>${line}</p>${extra}${extraD}
+    <p>${line}</p>${todayAllowHTML('w')}${extra}${extraD}
     <div class="actions" style="width:100%"><button class="btn ghost" data-act="wclose">Vào sổ</button><button class="btn primary" data-act="wadd">${li('plus', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Ghi khoản</button></div>
   </div></div>`;
 }
@@ -1248,6 +1256,14 @@ function securityCard() {
       ${S.panelErr ? `<p class="err">${esc(S.panelErr)}</p>` : ''}
       <div class="actions"><button type="button" class="btn ghost" data-act="panel" data-p="">Hủy</button><button type="submit" class="btn primary" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Đang kiểm tra…' : 'Bật đồng bộ'}</button></div>
     </form>`;
+  else if (S.panel === 'token') {
+    const tok = syncToken();
+    body = `
+    <p class="pct" style="text-align:left">Đây là mã truy cập GitHub đang dùng để đồng bộ trên máy này. Dán mã này vào máy khác (mục <b>"Đã có sổ ở máy khác? Mở sổ đó"</b>) để mở cùng một sổ.</p>
+    <div class="tok-box">${S.tokShow ? `<div class="code tok-code">${esc(tok)}</div>` : `<div class="code tok-code tok-hidden">${esc(tok.slice(0, 11))}${'•'.repeat(18)}</div>`}</div>
+    <p class="pct" style="text-align:left">Giữ bí mật như chìa khóa: không gửi vào chat, không chụp màn hình. Mã hết hạn thì tạo mã mới trên GitHub rồi bấm <b>Tắt trên máy này</b> và <b>Bật đồng bộ</b> lại.</p>
+    <div class="actions"><button class="btn ghost" data-act="tokshow">${S.tokShow ? 'Ẩn mã' : 'Hiện mã'}</button><button class="btn primary" data-act="copycode" data-code="${esc(tok)}">Chép mã</button><button class="btn ghost" data-act="panel" data-p="">Đóng</button></div>`;
+  }
   else if (S.panel === 'pair') {
     const url = location.origin + location.pathname + '#ket-noi=' + encodeURIComponent(syncToken());
     let svg = '';
@@ -1273,7 +1289,7 @@ function securityCard() {
     <div class="sync-box">
       <div><b>Đồng bộ nhiều máy</b><p class="pct" style="text-align:left" id="syncLine">${syncLine()}</p></div>
       <div class="actions">${syncToken()
-        ? `<button class="btn primary" data-act="panel" data-p="pair">${li('eye', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Kết nối máy khác (mã QR)</button><button class="btn ghost" data-act="syncnow">Đồng bộ ngay</button><button class="btn ghost danger${S.syncOffArm ? ' armed' : ''}" data-act="syncoff">${S.syncOffArm ? 'Bấm lần nữa để tắt' : 'Tắt trên máy này'}</button>`
+        ? `<button class="btn primary" data-act="panel" data-p="pair">${li('eye', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Kết nối máy khác (mã QR)</button><button class="btn ghost" data-act="panel" data-p="token">Xem mã đồng bộ</button><button class="btn ghost" data-act="syncnow">Đồng bộ ngay</button><button class="btn ghost danger${S.syncOffArm ? ' armed' : ''}" data-act="syncoff">${S.syncOffArm ? 'Bấm lần nữa để tắt' : 'Tắt trên máy này'}</button>`
         : `<button class="btn primary" data-act="panel" data-p="sync">${li('cloud', { size: 20, target: 'button', primary: '#04201d', secondary: '#04201d' })}Bật đồng bộ</button>`}</div>
     </div>
     <div class="grid2">
@@ -1405,6 +1421,7 @@ document.addEventListener('click', async (ev) => {
     S.syncOffArm = false; localStorage.removeItem('gc.sync'); setSync('off'); S.panel = ''; S.panelMsg = 'Đã tắt đồng bộ trên máy này. Dữ liệu trong máy vẫn giữ nguyên.'; render();
   }
   else if (act === 'pairshow') { S.pairShow = !S.pairShow; render(); }
+  else if (act === 'tokshow') { S.tokShow = !S.tokShow; render(); }
   else if (act === 'dk') { S.dk = b.dataset.k; render(); }
   else if (act === 'ddonetoggle') { S.dShowDone = !S.dShowDone; render(); }
   else if (act === 'dadd') {
@@ -1493,12 +1510,14 @@ document.addEventListener('click', async (ev) => {
     const code = b.dataset.code;
     try { await navigator.clipboard.writeText(code); b.textContent = 'Đã chép mã'; }
     catch {
-      const el = b.parentElement.querySelector('.code') || $('.code');
+      let btn = b;
+      if (S.panel === 'token' && !S.tokShow) { S.tokShow = true; render(); btn = $('#security [data-act="copycode"]') || b; }
+      const el = btn.parentElement.querySelector('.code') || $('.code');
       if (el) { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
-      b.textContent = 'Đã bôi đen, hãy tự chép';
+      btn.textContent = 'Đã bôi đen, hãy tự chép';
     }
   }
-  else if (act === 'panel') { S.panel = b.dataset.p; S.panelErr = ''; S.panelMsg = ''; S.shownCode = ''; render(); }
+  else if (act === 'panel') { S.panel = b.dataset.p; S.panelErr = ''; S.panelMsg = ''; S.shownCode = ''; S.tokShow = false; render(); }
   else if (act === 'showcode') {
     try { S.shownCode = (await unseal(S.key, vault.recBox)).code; S.panel = 'code'; } catch { S.panelMsg = 'Không đọc được mã khôi phục.'; }
     render();
