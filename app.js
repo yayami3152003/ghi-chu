@@ -535,7 +535,7 @@ async function changePin(newPin) {
   vault = { ...vault, ...upd };
 }
 function enterApp(key, raw) {
-  S.gateNote = ''; S.bpanel = null; S.bErr = ''; S.dpanel = null; S.dErr = ''; S.profile = {}; S.cpanel = null; applyCats(null); S.welcome = true;
+  S.gateNote = ''; S.bpanel = null; S.bErr = ''; S.dpanel = null; S.dErr = ''; S.wallets = null; S.wpanel = null; S.wErr = ''; S.profile = {}; S.cpanel = null; applyCats(null); S.welcome = true;
   S.key = key; S.raw = raw || null; S.demo = false; S.panel = ''; S.shownCode = ''; S.tx = new Map(); S.loading = true; S.stale = false; S.loadErr = '';
   S.gate = 'app';
   const gen = ++S.gen;
@@ -581,12 +581,13 @@ function enterApp(key, raw) {
       for (const ch of changes) {
         if (gen !== S.gen) return;
         const id = ch.doc.id;
-        if (ch.type === 'removed') { if (id === 'cats') applyCats(null); if (id === 'profile') S.profile = {}; continue; }
+        if (ch.type === 'removed') { if (id === 'cats') applyCats(null); if (id === 'profile') S.profile = {}; if (id === 'wallets') S.wallets = null; continue; }
         try {
           const v = await unseal(key, ch.doc.data());
           if (gen !== S.gen) return;
           if (id === 'cats') applyCats(v.list);
           if (id === 'profile') S.profile = v;
+          if (id === 'wallets') S.wallets = Array.isArray(v.list) && v.list.length ? v.list : null;
         } catch {}
       }
       if (gen === S.gen) render();
@@ -618,7 +619,7 @@ function lock() {
   if (unsubBg) { unsubBg(); unsubBg = null; }
   if (unsubCfg) { unsubCfg(); unsubCfg = null; }
   if (unsubDebt) { unsubDebt(); unsubDebt = null; }
-  S.debts = new Map(); S.dpanel = null;
+  S.debts = new Map(); S.dpanel = null; S.wallets = null; S.wpanel = null;
   S.bg = new Map(); S.bpanel = null; S.profile = {}; S.cpanel = null; S.profDraft = null; applyCats(null);
   clearTimeout(loadTimer);
   S.key = null; S.raw = null; S.pending = null; S.recCode = ''; S.panel = ''; S.shownCode = ''; S.tx = new Map(); closeSheet();
@@ -678,6 +679,7 @@ function topLayer() {
   if (S.gate === 'app') {
     if (S.welcome) return 'welcome';
     if (S.page) return S.calSel ? 'calsel' : 'page';
+    if (S.wpanel) return 'wpanel';
     if (S.dpanel) return 'dpanel';
     if (S.bpanel) return 'bpanel';
     if (S.cpanel) return 'cpanel';
@@ -693,6 +695,7 @@ function closeTopLayer() {
   if (t === 'welcome') S.welcome = false;
   else if (t === 'calsel') S.calSel = null;
   else if (t === 'page') { S.page = null; S.calSel = null; S.nav = 'top'; render(); return scrollTo(0, 0); }
+  else if (t === 'wpanel') { S.wpanel = null; S.wErr = ''; }
   else if (t === 'dpanel') { S.dpanel = null; S.dErr = ''; }
   else if (t === 'bpanel') { S.bpanel = null; S.bErr = ''; }
   else if (t === 'cpanel') { S.cpanel = null; S.cErr = ''; }
@@ -908,7 +911,7 @@ function renderApp() {
         const dn = total(dl, 'thu') - total(dl, 'chi');
         ledger += `<div class="day-head"><span>${WD[dd.getDay()]}, ${dm(dd)}</span><span class="num ${dn >= 0 ? 'amt-in' : 'amt-out'}">${dn >= 0 ? '+' : MINUS}${money(Math.abs(dn))}</span></div>`;
       }
-      ledger += `<button class="tx" data-act="edit" data-id="${esc(x.id)}" style="--cc:${ccVar(x.cat)}"><span class="ci">${catIcon(x.cat, 24, '.tx')}</span><span class="tx-main"><span class="tx-cat">${esc(CAT_NAME[x.cat] || x.cat)}</span>${x.note ? `<span class="tx-note">${esc(x.note)}</span>` : ''}</span><span class="tx-amt ${x.k === 'thu' ? 'in' : 'out'}">${signed(x)}</span></button>`;
+      ledger += txRowHTML(x);
     }
   }
 
@@ -954,6 +957,7 @@ function renderApp() {
             </section>
             ${budgetCard()}
           </div>
+          ${walletsCard()}
           ${debtsCard()}
           ${chart}
           <section class="card" id="ledger"><div class="card-head"><h3>Các khoản ${WORD[S.view]}</h3><p>${sorted.length} khoản</p></div><div class="ledger">${ledger}</div></section>
@@ -983,6 +987,7 @@ function dockActions() {
     ['badd', 'Hạn mức', SV.opqmrqco],
     ['dadd', 'Khoản nợ', SV.xvmmqwjv],
     ['cadd', 'Danh mục', SV.uepnupwh],
+    ['walletadd', 'Thêm ví', W_TYPES.ewallet[1]],
     ['backup', 'Sao lưu', SVP('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>')],
     syncToken() ? ['syncnow', 'Đồng bộ', SVP('<path d="M20 11a8 8 0 0 0-14.5-4.5M4 13a8 8 0 0 0 14.5 4.5M5.5 3v3.5H9M18.5 21v-3.5H15"/>')] : ['sync', 'Bật đồng bộ', SV.evearxpv],
     ['profile', 'Hồ sơ', SVP('<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>')],
@@ -1077,8 +1082,79 @@ function calendarCard() {
     <p class="pct" style="text-align:left">Chạm vào một ngày để xem và ghi khoản cho ngày đó. Chạm cột "Cả tuần" để xem tuần đó chi từng ngày bao nhiêu.</p>
   </section>`;
 }
+// ---------- ví & tài khoản: tiền mặt / tài khoản ngân hàng / ví điện tử ----------
+const W_TYPES = {
+  cash: ['Tiền mặt', SVP('<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v.01M18 14.5v.01" stroke-width="2.4"/>')],
+  bank: ['Tài khoản', SV.ylscktzo],
+  ewallet: ['Ví điện tử', SVP('<path d="M4 7.5h14.5A1.5 1.5 0 0 1 20 9v9.5a1.5 1.5 0 0 1-1.5 1.5H4zM4 7.5L15 4v3.5"/><path d="M16 14h.01" stroke-width="2.8"/>')],
+};
+const DEFAULT_WALLETS = [
+  { id: 'cash', name: 'Tiền mặt', type: 'cash', init: 0, color: '#63e4a4' },
+  { id: 'bank', name: 'Tài khoản ngân hàng', type: 'bank', init: 0, color: '#62b6f0' },
+  { id: 'ewallet', name: 'Ví điện tử', type: 'ewallet', init: 0, color: '#e987b8' },
+];
+const walletsAll = () => S.wallets || DEFAULT_WALLETS;
+const walletsActive = () => walletsAll().filter((w) => !w.del);
+// Khoản cũ chưa chọn ví thì tính vào ví đầu tiên (Tiền mặt)
+const defaultWalletId = () => (walletsActive()[0] || DEFAULT_WALLETS[0]).id;
+const txWallet = (t) => t.w || walletsAll()[0].id;
+const walletName = (id) => { const w = walletsAll().find((x) => x.id === id); return w ? w.name : ''; };
+function walletBalance(w) {
+  let b = w.init || 0;
+  for (const t of S.tx.values()) if (txWallet(t) === w.id) b += t.k === 'thu' ? t.a : -t.a;
+  return b;
+}
+const wIcon = (w, size = 22) => `<span class="w-ico" style="--cc:${esc(w.color || '#9db2ad')};width:${size + 18}px;height:${size + 18}px">${(W_TYPES[w.type] || W_TYPES.cash)[1]}</span>`;
+function walletsCard() {
+  if (S.wpanel) return `<section class="card" id="wallets"><div class="card-head">${backBtn()}<h3>${S.wpanel.id ? 'Sửa ví' : 'Thêm ví'}</h3></div>${walletForm()}</section>`;
+  const list = walletsActive();
+  const sum = list.reduce((s, w) => s + walletBalance(w), 0);
+  return `<section class="card" id="wallets"><div class="card-head"><h3>Ví & tài khoản</h3><button class="mini-add" data-act="walletadd">+ Thêm ví</button></div>
+    <div class="w-total"><span>Tổng tiền đang có</span><b class="${sum < 0 ? 'amt-out' : ''}">${sum < 0 ? MINUS : ''}${money(Math.abs(sum))}</b></div>
+    <div class="w-list">${list.map((w) => { const b = walletBalance(w); return `<button class="w-row" data-act="wedit" data-id="${esc(w.id)}">${wIcon(w)}<span class="w-main"><span class="w-name">${esc(w.name)}</span><span class="w-type">${(W_TYPES[w.type] || W_TYPES.cash)[0]}</span></span><b class="${b < 0 ? 'amt-out' : 'amt-in'}">${b < 0 ? MINUS : ''}${money(Math.abs(b))}</b></button>`; }).join('')}</div>
+    <p class="pct" style="text-align:left">Số dư = số dư ban đầu + tiền thu − tiền chi của ví đó. Chạm vào một ví để sửa hoặc xóa.</p></section>`;
+}
+function walletForm() {
+  const p = S.wpanel;
+  return `<form id="walletForm" class="stack" novalidate>
+    <label class="field">Tên ví<input id="wName" maxlength="30" value="${esc(p.name || '')}" placeholder="VD: Vietcombank, MoMo, Tiền mặt"></label>
+    <div class="field">Loại<div class="mini-seg" style="align-self:flex-start">${Object.entries(W_TYPES).map(([k, [lb]]) => `<button type="button" data-act="wtype" data-k="${k}" aria-pressed="${p.type === k}">${lb}</button>`).join('')}</div></div>
+    <label class="field">Số dư ban đầu (đồng)<input id="wInit" inputmode="numeric" value="${p.init ? NF.format(p.init) : ''}" placeholder="Số tiền đang có trong ví lúc bắt đầu ghi"></label>
+    <div class="field">Màu<div class="swatches">${COLOR_SET.map((c) => `<button type="button" data-act="wcolor" data-v="${c}" aria-pressed="${p.color === c}" style="background:${c}" aria-label="Chọn màu"></button>`).join('')}</div></div>
+    ${p.id ? `<p class="pct" style="text-align:left">Số dư hiện tại: <b>${money(walletBalance(p))}</b></p>` : ''}
+    ${S.wErr ? `<p class="err">${esc(S.wErr)}</p>` : ''}
+    <div class="actions">${p.id ? `<button type="button" class="btn ghost danger${p.armed ? ' armed' : ''}" data-act="wdel">${p.armed ? 'Bấm lần nữa để xóa' : 'Xóa'}</button>` : ''}<button type="button" class="btn ghost" data-act="wcancel">Hủy</button><button type="submit" class="btn primary">Lưu ví</button></div>
+    ${p.id ? '<p class="pct" style="text-align:left">Xóa ví không xóa các khoản đã ghi, chúng vẫn hiện tên ví cũ.</p>' : ''}
+  </form>`;
+}
+function readWalletForm() {
+  const p = S.wpanel; if (!p || !$('#wName')) return;
+  p.name = $('#wName').value.trim(); p.init = Number(digits($('#wInit').value || '') || 0);
+}
+async function writeWallets(list) {
+  await saveCfg('wallets', { list });
+  S.wallets = list; S.wpanel = null; S.wErr = ''; render();
+}
+async function saveWallet() {
+  readWalletForm();
+  const p = S.wpanel;
+  if (!p.name) { S.wErr = 'Nhập tên ví.'; return render(); }
+  if (walletsActive().some((w) => w.id !== p.id && w.name.toLowerCase() === p.name.toLowerCase())) { S.wErr = 'Đã có ví tên này.'; return render(); }
+  const list = walletsAll().map((w) => ({ ...w }));
+  const obj = { name: p.name.slice(0, 30), type: p.type || 'cash', init: p.init || 0, color: p.color || '#9db2ad' };
+  if (p.id) Object.assign(list.find((w) => w.id === p.id), obj);
+  else list.push({ id: 'w' + Date.now().toString(36), ...obj });
+  try { await writeWallets(list); } catch (e) { S.wErr = errText(e); render(); }
+}
+async function deleteWallet() {
+  const p = S.wpanel;
+  if (walletsActive().length <= 1) { S.wErr = 'Phải giữ lại ít nhất một ví.'; return render(); }
+  const list = walletsAll().map((w) => (w.id === p.id ? { ...w, del: true } : { ...w }));
+  try { await writeWallets(list); } catch (e) { S.wErr = errText(e); render(); }
+}
 function txRowHTML(x) {
-  return `<button class="tx" data-act="edit" data-id="${esc(x.id)}" style="--cc:${ccVar(x.cat)}"><span class="ci">${catIcon(x.cat, 24, '.tx')}</span><span class="tx-main"><span class="tx-cat">${esc(CAT_NAME[x.cat] || x.cat)}</span>${x.note ? `<span class="tx-note">${esc(x.note)}</span>` : ''}</span><span class="tx-amt ${x.k === 'thu' ? 'in' : 'out'}">${signed(x)}</span></button>`;
+  const sub = [x.note, walletName(txWallet(x))].filter(Boolean).map(esc).join(' · ');
+  return `<button class="tx" data-act="edit" data-id="${esc(x.id)}" style="--cc:${ccVar(x.cat)}"><span class="ci">${catIcon(x.cat, 24, '.tx')}</span><span class="tx-main"><span class="tx-cat">${esc(CAT_NAME[x.cat] || x.cat)}</span>${sub ? `<span class="tx-note">${sub}</span>` : ''}</span><span class="tx-amt ${x.k === 'thu' ? 'in' : 'out'}">${signed(x)}</span></button>`;
 }
 function calDetail() {
   const s = S.calSel; if (!s) return '';
@@ -1543,10 +1619,16 @@ function paintForm() {
   $('#kChi').setAttribute('aria-pressed', F.k === 'chi');
   $('#kThu').setAttribute('aria-pressed', F.k === 'thu');
   $('#fCats').innerHTML = CATS[F.k].map(([id, name]) => `<button type="button" data-act="cat" data-c="${id}" aria-pressed="${F.cat === id}" style="--cc:${ccVar(id)}"><span class="ci">${ICON[id]}</span>${name}</button>`).join('');
+  const ws = walletsActive();
+  if (!ws.some((w) => w.id === F.w) && !(F.id && F.w)) F.w = ws[0] ? ws[0].id : 'cash';
+  $('#fWLabel').textContent = F.k === 'chi' ? 'Trả bằng' : 'Nhận vào';
+  $('#fWallets').innerHTML = [...ws, ...walletsAll().filter((w) => w.del && w.id === F.w)].map((w) => `<button type="button" class="w-chip" data-act="fw" data-w="${esc(w.id)}" aria-pressed="${F.w === w.id}" style="--cc:${esc(w.color || '#9db2ad')}">${(W_TYPES[w.type] || W_TYPES.cash)[1]}<span>${esc(w.name)}</span></button>`).join('');
   fSave.textContent = F.id ? 'Lưu thay đổi' : F.k === 'chi' ? 'Lưu khoản chi' : 'Lưu khoản thu';
 }
 function openSheet(tx, dateStr) {
   F.id = tx ? tx.id : null; F.k = tx ? tx.k : 'chi'; F.cat = tx ? tx.cat : (CATS.chi[0] || ['khac'])[0]; F.ts = tx ? tx.ts : 0;
+  let lastW = ''; try { lastW = localStorage.getItem('gc.lastW') || ''; } catch {}
+  F.w = tx ? txWallet(tx) : (walletsActive().some((w) => w.id === lastW) ? lastW : defaultWalletId());
   setAmt(tx ? tx.a : 0); fNote.value = tx ? tx.note || '' : '';
   fDate.value = tx ? tx.d : (dateStr || ymd(S.view === 'day' ? S.anchor : today()));
   $('#sheetTitle').textContent = tx ? 'Sửa khoản' : 'Thêm khoản';
@@ -1562,7 +1644,7 @@ function showErr(m) { fErr.textContent = m; fErr.hidden = false; }
 
 fAmt.addEventListener('input', () => setAmt(getAmt()));
 document.addEventListener('input', (ev) => {
-  if (['bAmt', 'dAmt', 'pAmt'].includes(ev.target.id)) { const n = Number(digits(ev.target.value) || 0); ev.target.value = n ? NF.format(n) : ''; }
+  if (['bAmt', 'dAmt', 'pAmt', 'wInit'].includes(ev.target.id)) { const n = Number(digits(ev.target.value) || 0); ev.target.value = n ? NF.format(n) : ''; }
   if (ev.target.id === 'bAmt' && S.bpanel) { const el = $('#bDaily'); if (el) el.innerHTML = dailyPreview(Number(digits(ev.target.value) || 0), S.bpanel.per); }
 });
 $('#sheet').addEventListener('submit', async (ev) => {
@@ -1570,7 +1652,8 @@ $('#sheet').addEventListener('submit', async (ev) => {
   const a = getAmt();
   if (!a) return showErr('Nhập số tiền lớn hơn 0.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fDate.value)) return showErr('Chọn ngày cho khoản này.');
-  const tx = { k: F.k, a, cat: F.cat, note: fNote.value.trim().slice(0, 80), d: fDate.value, ts: F.ts || Date.now() };
+  const tx = { k: F.k, a, cat: F.cat, w: F.w || defaultWalletId(), note: fNote.value.trim().slice(0, 80), d: fDate.value, ts: F.ts || Date.now() };
+  try { localStorage.setItem('gc.lastW', tx.w); } catch {}
   fSave.disabled = true;
   try {
     if (S.demo) { const id = F.id || 'm' + Date.now(); S.tx.set(id, { ...tx, id }); }
@@ -1654,6 +1737,19 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'pairshow') { S.pairShow = !S.pairShow; render(); }
   else if (act === 'tokshow') { S.tokShow = !S.tokShow; render(); }
   else if (act === 'dk') { S.dk = b.dataset.k; render(); }
+  else if (act === 'fw') { F.w = b.dataset.w; paintForm(); }
+  else if (act === 'walletadd') {
+    const used = new Set(walletsActive().map((w) => w.color));
+    S.wpanel = { id: null, name: '', type: 'bank', init: 0, color: COLOR_SET.find((c) => !used.has(c)) || COLOR_SET[0] }; S.wErr = ''; render();
+    const c = $('#wallets'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  else if (act === 'wedit') { const w = walletsAll().find((x) => x.id === b.dataset.id); if (w) { S.wpanel = { ...w }; S.wErr = ''; render(); } }
+  else if (act === 'wtype' || act === 'wcolor') { readWalletForm(); if (act === 'wtype') S.wpanel.type = b.dataset.k; else S.wpanel.color = b.dataset.v; S.wpanel.armed = false; render(); }
+  else if (act === 'wcancel') { S.wpanel = null; S.wErr = ''; render(); }
+  else if (act === 'wdel') {
+    if (!S.wpanel.armed) { readWalletForm(); S.wpanel.armed = true; return render(); }
+    await deleteWallet();
+  }
   else if (act === 'ddonetoggle') { S.dShowDone = !S.dShowDone; render(); }
   else if (act === 'dadd') {
     S.dpanel = { id: null, k: S.dk || 'cho', who: '', amt: 0, d: ymd(today()), due: '', note: '', pays: [], done: false }; S.dErr = ''; render();
@@ -1732,7 +1828,7 @@ document.addEventListener('click', async (ev) => {
     await sleep(180);
     const goTo = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
     if (d === 'add-chi' || d === 'add-thu') { openSheet(null); if (d === 'add-thu') { F.k = 'thu'; F.cat = (CATS.thu[0] || ['khacthu'])[0]; paintForm(); } }
-    else if (d === 'badd' || d === 'dadd' || d === 'cadd') { const x = document.querySelector(`[data-act="${d}"]`); if (x) x.click(); }
+    else if (d === 'badd' || d === 'dadd' || d === 'cadd' || d === 'walletadd') { const x = document.querySelector(`[data-act="${d}"]`); if (x) x.click(); }
     else if (d === 'backup') { exportBackup(); S.panelMsg = 'Đã tạo file sao lưu. Cất file ở nơi an toàn (Drive riêng, Zalo Cloud của bạn…).'; render(); showToast('Đã tạo file sao lưu', 'ok'); }
     else if (d === 'syncnow') { try { await syncNow(); showToast('Đã đồng bộ xong', 'ok'); } catch (e) { showToast(e.message || 'Lỗi đồng bộ', 'over'); } }
     else if (d === 'sync') { S.panel = 'sync'; S.panelErr = ''; S.nav = 'security'; render(); goTo('security'); }
@@ -1795,6 +1891,7 @@ document.addEventListener('submit', async (ev) => {
   if (f.id === 'budgetForm') { ev.preventDefault(); return saveBudget(); }
   if (f.id === 'catForm') { ev.preventDefault(); return saveCat(); }
   if (f.id === 'debtForm') { ev.preventDefault(); return saveDebt(false); }
+  if (f.id === 'walletForm') { ev.preventDefault(); return saveWallet(); }
   if (f.id === 'syncForm') {
     ev.preventDefault();
     const tok = (($('#syncTok') || {}).value || '').trim();
