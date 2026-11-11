@@ -938,7 +938,7 @@ function renderApp() {
   app.innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Menu">
       <div class="logo">${li('coins', { size: 30, trigger: 'loop', delay: 3000, primary: '#04201d', secondary: '#04201d' })}</div>
-      <nav class="rail-nav">${NAV.map(([id, ic, lb], i) => `<button data-act="go" data-t="${id}" class="${(S.nav || 'top') === id ? 'on' : ''}" title="${lb}" aria-label="${lb}">${li(ic, { size: 26, target: 'button', secondary: (S.nav || 'top') === id ? '#36d6c4' : '#8ea8a5', primary: (S.nav || 'top') === id ? '#e7f3f1' : '#8ea8a5' })}<span>${lb}</span></button>${i === 1 ? '' : ''}`).join('')}</nav>
+      <nav class="rail-nav">${NAV.map(([id, ic, lb], i) => `<button data-act="go" data-t="${id}" class="${(S.nav || 'top') === id ? 'on' : ''}" title="${lb}" aria-label="${lb}">${li(ic, { size: 26, target: 'button', secondary: (S.nav || 'top') === id ? '#36d6c4' : '#8ea8a5', primary: (S.nav || 'top') === id ? '#e7f3f1' : '#8ea8a5' })}<span class="rail-lbl">${lb}</span></button>`).join('')}</nav>
       <button class="rail-add" data-act="add" title="Thêm khoản" aria-label="Thêm khoản">${li('plus', { size: 30, target: 'button', primary: '#e7f3f1', secondary: '#36d6c4' })}</button>
     </aside>
     <main class="main" id="top">
