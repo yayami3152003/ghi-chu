@@ -668,7 +668,25 @@ function startDemo() {
 
 // ---------- vẽ ----------
 const app = $('#app');
-function render() { if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); } syncHistory(); checkIcons(); }
+// Vẽ lại trang. Nếu đang gõ dở trong một ô (vd lúc đồng bộ chạy ngầm), giữ nguyên chữ đang gõ, các ô cùng form và con trỏ.
+function render() {
+  const ae = document.activeElement;
+  let keep = null;
+  if (ae && app.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName) && ae.id && !/^(file|checkbox|radio)$/.test(ae.type)) {
+    const scope = ae.form || ae.closest('section') || app;
+    const vals = {};
+    scope.querySelectorAll('input[id], textarea[id]').forEach((el) => { if (!/^(file|checkbox|radio)$/.test(el.type)) vals[el.id] = el.value; });
+    let s = null, e = null; try { s = ae.selectionStart; e = ae.selectionEnd; } catch {}
+    keep = { id: ae.id, vals, s, e };
+  }
+  if (S.gate === 'app') renderApp(); else { renderGate(); syncWelcome(''); }
+  if (keep) {
+    for (const [id, v] of Object.entries(keep.vals)) { const el = document.getElementById(id); if (el && el.value !== v) el.value = v; }
+    const el = document.getElementById(keep.id);
+    if (el) { el.focus({ preventScroll: true }); try { if (keep.s !== null) el.setSelectionRange(keep.s, keep.e); } catch {} }
+  }
+  syncHistory(); checkIcons();
+}
 
 // ---------- nút quay lại: nút Back của điện thoại / trình duyệt đóng màn đang mở ----------
 const GATE_SUB = ['forgot', 'gsync', 'wipe'];
@@ -2062,7 +2080,9 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => { if (syncToken() && db && !document.hidden) syncNow().catch(() => {}); }, 60000);
 for (const ev of ['pointerdown', 'keydown', 'scroll', 'touchstart']) addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true });
 setInterval(() => { if (S.gate === 'app' && !S.demo && Date.now() - lastAct > 10 * 60 * 1000) lock(); }, 30000);
-let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (S.gate === 'app') render(); }, 150); });
+// Chỉ vẽ lại khi chiều ngang đổi (xoay máy). Bàn phím điện thoại bật lên chỉ làm đổi chiều cao, không vẽ lại để khỏi mất chữ đang gõ.
+let rz, lastW = innerWidth;
+addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (Math.abs(innerWidth - lastW) < 2) return; lastW = innerWidth; if (S.gate === 'app') render(); }, 150); });
 
 document.addEventListener('change', async (ev) => {
   if (ev.target.id === 'avatarFile' && ev.target.files[0]) {
